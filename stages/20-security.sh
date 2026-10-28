@@ -12,7 +12,8 @@ load_config
 # key. Until then, turning passwords off could lock them out.
 key_login_seen() {
     local pattern="Accepted publickey for $TARGET_USER from"
-    as_root journalctl -q --no-pager --since=-90d --grep "$pattern" 2>/dev/null | grep -q . && return 0
+    # Only sshd's own messages count (sudo logs command lines, patterns included).
+    as_root journalctl -q --no-pager --since=-90d _COMM=sshd _COMM=sshd-session --grep "$pattern" 2>/dev/null | grep -q . && return 0
     as_root grep -qs "$pattern" /var/log/auth.log /var/log/auth.log.1 /var/log/secure 2>/dev/null
 }
 # ssh_ports — every port sshd (or ssh.socket on 26.04) listens on.
