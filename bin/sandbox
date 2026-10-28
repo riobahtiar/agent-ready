@@ -63,24 +63,50 @@ SAFE_ENV=(PATH HOME USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL TZ TMPDIR EDIT
 # Go module cache) hold code that runs UNsandboxed later, so they're
 # read-only inside. Sandboxed commands get throwaway caches instead. (npm and
 # pnpm stay shared: their stores are content-addressed and integrity-checked.)
-SANDBOX_CACHE="${TMPDIR:-/tmp}/sandbox-cache-$(id -u)"
+# private_dir <name> — a directory only you own: under $XDG_RUNTIME_DIR (0700,
+# per user) when there is one, else a fresh mktemp -d. Never a guessable path
+# in shared /tmp, where someone else could pre-create it or plant a link.
+private_dir() {
+    local base=${XDG_RUNTIME_DIR:-} d
+    if [[ -n $base && -d $base && -O $base && ! -L $base ]]; then
+        d="$base/$1"
+        (umask 077 && mkdir -p "$d")
+    else
+        d="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
+    fi
+    [[ -d $d && -O $d && ! -L $d ]] || die "unsafe sandbox directory $d"
+    chmod 700 "$d"
+    printf '%s\n' "$d"
+}
+
 clean_env() {
     local v
     local -a keep=()
     for v in "${SAFE_ENV[@]}" "$@"; do [[ -n ${!v:-} ]] && keep+=("$v=${!v}"); done
-    (umask 077 && mkdir -p "$SANDBOX_CACHE")
     keep+=("XDG_CACHE_HOME=$SANDBOX_CACHE/xdg" "GOCACHE=$SANDBOX_CACHE/go-build" "GOMODCACHE=$SANDBOX_CACHE/go-mod"
         "UV_CACHE_DIR=$SANDBOX_CACHE/uv" "PIP_CACHE_DIR=$SANDBOX_CACHE/pip" "BUN_INSTALL_CACHE_DIR=$SANDBOX_CACHE/bun"
         "MISE_CACHE_DIR=$SANDBOX_CACHE/mise" "PUB_CACHE=$SANDBOX_CACHE/pub" "COMPOSER_CACHE_DIR=$SANDBOX_CACHE/composer")
     printf '%s\0' "${keep[@]}"
 }
 
+# run_policy <file> <writable dir…> — the shared policy plus this run's private dirs.
+run_policy() {
+    local out=$1
+    shift
+    have jq || die "jq is needed to build the sandbox policy"
+    mkdir -p "$(dirname "$out")"
+    jq --args '.filesystem.allowWrite += $ARGS.positional' "$@" <"$HOME/.srt-settings.json" >"$out"
+}
+
 cmd_run() {
     (($#)) || usage 2
     need_srt
+    SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    local policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-run.json"
+    run_policy "$policy" "$SANDBOX_CACHE"
     local -a env=()
     mapfile -d '' -t env < <(clean_env)
-    exec env -i "${env[@]}" srt --settings "$HOME/.srt-settings.json" -- "$@"
+    exec env -i "${env[@]}" srt --settings "$policy" -- "$@"
 }
 
 cmd_agent() {
@@ -103,12 +129,26 @@ cmd_agent() {
     local own state protect policy p
     own="$(agent_get "$name" config)" state="$(agent_get "$name" state)" protect="$(agent_get "$name" protect)"
     [[ -n $state ]] || warn "$name declares no writable state: it can read its config but not save sessions here"
-    # Create them first: srt can only bind paths that exist.
+    # Create them first (srt can only bind paths that exist), and refuse any
+    # that is, or passes through, a symlink: it could point the writable bind
+    # at something that runs later (~/.bashrc, a hook dir).
     for p in $state; do
         p="$(_expand_home "$p")"
-        [[ -e $p ]] && continue
-        if [[ $(basename "$p") == *.* ]]; then mkdir -p "$(dirname "$p")" && : >>"$p"; else mkdir -p "$p"; fi
+        if [[ ! -e $p && ! -L $p ]]; then
+            if [[ $(basename "$p") == *.* ]]; then mkdir -p "$(dirname "$p")" && : >>"$p"; else mkdir -p "$p"; fi
+        fi
+        [[ -L $p || $(readlink -f "$p") != "$p" ]] && die "refusing writable state path ${p/#$HOME/\~}: it is (or passes through) a symlink"
     done
+    SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    state+=" $SANDBOX_CACHE"
+    # Agents with a jail hook run on a throwaway config dir instead.
+    local -a jail_env=()
+    if declare -F "${name}_jail" >/dev/null; then
+        local jail
+        jail="$(private_dir "sandbox-$name")"
+        mapfile -t jail_env < <("${name}_jail" "$jail")
+        state+=" $jail"
+    fi
     policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-$name.json"
     mkdir -p "$(dirname "$policy")"
     jq --arg own "$own" --arg state "$state" --arg protect "$protect" '
@@ -120,6 +160,7 @@ cmd_agent() {
     local -a env=()
     # shellcheck disable=SC2046
     mapfile -d '' -t env < <(clean_env $(agent_get "$name" env))
+    env+=("${jail_env[@]}")
     warn "agent sandboxed: writes only in $(pwd), caches and its own config; network only to the allowlist"
     exec env -i "${env[@]}" srt --settings "$policy" -- "$(agent_bin "$name")" "$@"
 }

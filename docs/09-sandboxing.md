@@ -36,7 +36,10 @@ reach. The layers below are ordered from lightest to strongest.
   `~/.config/secrets.env`, `~/.dotfiles/config.env`, all of `~/.hermes`, the
   Claude/Codex OAuth files and shell history. `sandbox agent X` may read X's
   own config dir (sign-in) but write only the session/log paths its module
-  lists (`state=`, an allowlist). Settings, hooks, plugins, skills, MCP config
+  lists (`state=`, an allowlist, refused if any is a symlink). Claude goes
+  further: it runs on a throwaway `CLAUDE_CONFIG_DIR` (sign-in and hook-free
+  settings copied in), because its shell snapshots and project memory are
+  sourced/loaded by later sessions; jailed transcripts aren't kept. Settings, hooks, plugins, skills, MCP config
   (`~/.claude.json`) and the agent's code stay read-only, so a jailed agent
   can't plant something for its next unjailed run. The price: an agent can't
   change its own settings, or refresh an expired OAuth token, while jailed. For

@@ -26,7 +26,10 @@ declare -gA AGENT_META=()
 #   env      API-key variables the agent needs inside `sandbox agent` (others stay unset)
 #   state    the ONLY paths `sandbox agent` may write: session/log dirs (files if
 #            the name has a dot). Never config, hooks, plugins, skills, MCP
-#            settings or the agent's code: those run outside the sandbox later.
+#            settings, shell snapshots, memory or the agent's code: anything a
+#            later unsandboxed run executes, sources or reads as instructions.
+#            Hook <name>_jail <dir> instead redirects the agent to a throwaway
+#            config dir (prints VAR=value lines), as claude.sh does.
 #   os       where it runs: linux macos (default both)
 #   managed  "stage:<name>" when a stage owns install (hermes)
 agent_define() {

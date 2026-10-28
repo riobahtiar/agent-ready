@@ -2,7 +2,7 @@
 # Claude Code (Anthropic) — native installer, self-updating. https://code.claude.com/docs
 agent_define claude \
     env="ANTHROPIC_API_KEY" \
-    state="~/.claude/projects ~/.claude/todos ~/.claude/shell-snapshots ~/.claude/session-env ~/.claude/file-history ~/.claude/paste-cache ~/.claude/debug ~/.claude/statsig" \
+    state="" \
     title="Claude Code (Anthropic)" \
     wrapper=b-claude \
     herdr=claude \
@@ -10,6 +10,19 @@ agent_define claude \
     login="claude   then type /login (prints a URL; paste the code back)" \
     paths="~/.local/bin/claude ~/.local/share/claude" \
     config="~/.claude ~/.claude.json"
+
+# claude_jail <dir> — `sandbox agent claude`: nothing in the real ~/.claude is
+# writable (shell snapshots are sourced and project memory is loaded as
+# instructions by later, unjailed sessions). Claude runs on a throwaway config
+# dir instead, seeded with the sign-in and hook-free settings.
+claude_jail() {
+    local dir=$1
+    if [[ -f $HOME/.claude/.credentials.json ]]; then cp -p "$HOME/.claude/.credentials.json" "$dir/"; fi
+    if [[ -f $HOME/.claude/settings.json ]] && have jq; then
+        jq 'del(.hooks, .statusLine, .apiKeyHelper)' "$HOME/.claude/settings.json" >"$dir/settings.json"
+    fi
+    echo "CLAUDE_CONFIG_DIR=$dir"
+}
 
 claude_install() { _vendor_script https://claude.ai/install.sh; }
 claude_update() { claude update; }
