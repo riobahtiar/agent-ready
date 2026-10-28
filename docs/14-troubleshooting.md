@@ -18,6 +18,7 @@ Start with `doctor` and `./install.sh --status`: most problems show up in one of
 | Agent can't find `node`/`go` in a subshell | `mise doctor`; check `bash -lc 'echo $PATH'` includes `~/.local/share/mise/shims` |
 | Prompt isn't easy-eel | `fisher update` (or `./install.sh tools`), then `exec fish`. Check `functions -D fish_prompt` |
 | Right prompt shows `node` without a version | That shell uses shims, not `mise activate` (non-interactive). Interactive fish shows the version |
+| `ERR_TOO_MANY_REDIRECTS` / "Cloudflare SSL/TLS mode is Flexible" behind Cloudflare | Cloudflare → SSL/TLS → Overview → **Full (strict)**. Flexible fetches the origin over HTTP, and the origin's redirect to HTTPS then loops |
 | certbot fails | DNS must point here (`dig +short <domain>`), port 80 open. Behind Cloudflare: SSL **Full (strict)** |
 | Dashboard `400 Invalid Host header` | `hermes update`; confirm `hermes config get dashboard.public_url` is `https://h.ciptalogi.com` ([issue #34390](https://github.com/NousResearch/hermes-agent/issues/34390)) |
 | Dashboard won't start | `journalctl -u hermes-dashboard -n 50`; usually auth: `HERMES_RESET_PASSWORD=1 ./install.sh hermes` |
