@@ -15,7 +15,13 @@ agent_define hermes \
 
 # --non-interactive: the installer otherwise opens /dev/tty itself and runs
 # `hermes setup` + `gateway install` mid-provisioning (that's hermes-up's job).
-hermes_install() { _vendor_script https://hermes-agent.nousresearch.com/install.sh bash --non-interactive; }
+# --skip-computer-use on a machine without a desktop: that driver controls a
+# GUI (needs libXi & co.) and fails verification on a headless VPS.
+hermes_install() {
+    local -a args=(--non-interactive)
+    os_has_desktop || args+=(--skip-computer-use)
+    _vendor_script https://hermes-agent.nousresearch.com/install.sh bash "${args[@]}"
+}
 hermes_update() { hermes update; }
 hermes_uninstall() {
     if [[ $OS_KIND == linux ]] && systemctl cat hermes-dashboard >/dev/null 2>&1; then
