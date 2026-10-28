@@ -94,7 +94,8 @@ if git ls-files --error-unmatch config.env >/dev/null 2>&1; then
     note "  config.env is tracked!"
     fail=1
 fi
-if command -v gitleaks >/dev/null; then gitleaks detect --no-banner --redact -q || fail=1; fi
+# (a mise shim without an installed version exists but can't run: test it)
+if gitleaks version >/dev/null 2>&1; then gitleaks detect --no-banner --redact -q || fail=1; fi
 
 ((fail)) && {
     note "FAILED"

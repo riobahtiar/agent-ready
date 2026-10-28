@@ -15,11 +15,30 @@ if is_true "$SSH_HARDEN"; then
         root_login=prohibit-password
         is_true "$SSH_DISABLE_ROOT" && root_login=no
         render "$DOTFILES_DIR/system/sshd.conf" ROOT_LOGIN="$root_login" | as_root tee "$conf.new" >/dev/null
+        if as_root test -f "$conf"; then as_root cp "$conf" "$conf.prev"; fi
         as_root mv "$conf.new" "$conf"
         if as_root sshd -t; then
-            # Ubuntu 26.04 socket-activates ssh.service; Arch calls it sshd.service.
-            as_root systemctl try-reload-or-restart ssh.service sshd.service 2>/dev/null || true
-            ok "key-only auth, PermitRootLogin $root_login"
+            # Ubuntu 26.04 calls it ssh.service (socket-activated), Arch sshd.service.
+            unit=''
+            for u in ssh.service sshd.service; do
+                if systemctl cat "$u" >/dev/null 2>&1; then
+                    unit=$u
+                    break
+                fi
+            done
+            if [[ -n $unit ]] && ! as_root systemctl try-reload-or-restart "$unit"; then
+                warn "$unit didn't reload — running sshd keeps its old settings until it restarts"
+            fi
+            # Report what sshd will actually enforce, not what we wrote.
+            if as_root sshd -T 2>/dev/null | grep -qx 'passwordauthentication no'; then
+                ok "key-only auth, PermitRootLogin $root_login"
+            else
+                warn "sshd still allows passwords — another file in /etc/ssh/sshd_config.d wins over 10-cloud.conf"
+            fi
+            as_root rm -f "$conf.prev"
+        elif as_root test -f "$conf.prev"; then
+            as_root mv "$conf.prev" "$conf"
+            warn "sshd -t rejected the new hardening config — restored the previous one"
         else
             as_root rm -f "$conf"
             warn "sshd -t rejected the hardening config — removed it, SSH left unchanged"

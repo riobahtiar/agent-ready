@@ -29,7 +29,13 @@ guide="$DOTFILES_DIR/agents/AGENTS.global.md"
 for agent in "${AGENT_NAMES[@]}"; do
     target="$(agent_get "$agent" guide)"
     [[ $target != - ]] || continue
-    link_file "$guide" "$(_expand_home "$target")"
+    target="$(_expand_home "$target")"
+    # Your own global instructions win; reference the guide from them instead.
+    if [[ -e $target && $(readlink "$target" 2>/dev/null) != "$guide" ]]; then
+        step "kept your ${target/#$HOME/\~} — to include the machine guide, reference $guide from it"
+        continue
+    fi
+    link_file "$guide" "$target"
 done
 
 if have herdr; then

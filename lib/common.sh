@@ -204,7 +204,9 @@ link_file() {
 # install_file <src> <dst> [mode] — copy a managed file into place (root-owned targets).
 install_file() {
     local src=$1 dst=$2 mode=${3:-0644}
-    as_root install -D -m "$mode" "$src" "$dst"
+    # mkdir + install rather than `install -D`, which BSD install (macOS) lacks.
+    as_root mkdir -p "$(dirname "$dst")"
+    as_root install -m "$mode" "$src" "$dst"
 }
 
 # render <template> KEY=VALUE... — replace __KEY__ placeholders, print result.

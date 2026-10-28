@@ -171,7 +171,12 @@ install)
         target="$(agent_get "$name" herdr)"
         [[ $target != - ]] && have herdr && agent_installed "$name" && herdr integration install "$target" >/dev/null 2>&1 || true
         guide="$(agent_get "$name" guide)"
-        [[ $guide != - ]] && link_file "$DOTFILES_DIR/agents/AGENTS.global.md" "$(_expand_home "$guide")"
+        if [[ $guide != - ]]; then
+            guide="$(_expand_home "$guide")"
+            if [[ ! -e $guide || $(readlink "$guide" 2>/dev/null) == "$DOTFILES_DIR/agents/AGENTS.global.md" ]]; then
+                link_file "$DOTFILES_DIR/agents/AGENTS.global.md" "$guide"
+            fi
+        fi
         login="$(agent_get "$name" login)"
         [[ -n $login && $login != - ]] && step "sign in: $login"
     done

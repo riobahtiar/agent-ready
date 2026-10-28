@@ -21,7 +21,10 @@ for d in "$HOME/.local/share/mise/shims" "$HOME/.config/composer/vendor/bin" "$H
     esac
 done
 export PATH
-export PROJECTS_DIR="$HOME/projects"
+# PROJECTS_DIR from config.env when set there (empty = ~/projects).
+PROJECTS_DIR="$(sed -n "s/^PROJECTS_DIR=[\"']\{0,1\}\([^\"' #]*\).*/\1/p" "$HOME/.dotfiles/config.env" 2>/dev/null | head -1)"
+case $PROJECTS_DIR in "~"/*) PROJECTS_DIR="$HOME/${PROJECTS_DIR#"~/"}" ;; esac
+export PROJECTS_DIR="${PROJECTS_DIR:-$HOME/projects}"
 # Opt out of CLI telemetry (cf, wrangler, Next.js, Homebrew, … honour it).
 export DO_NOT_TRACK=1
 

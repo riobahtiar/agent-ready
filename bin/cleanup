@@ -30,6 +30,7 @@
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
+load_config # PROJECTS_DIR and friends from config.env
 
 # wizard — pick targets and options, preview with -n, then re-run for real.
 wizard() {
@@ -219,11 +220,23 @@ remember_remote_tips() {
 tip_published() {
     local repo=$1 branch=$2 tip=$3
     [[ -z $(git -C "$repo" rev-list "$tip" --not --remotes 2>/dev/null | head -1) ]] && return 0
-    grep -qx "$branch $tip" "$(tips_file "$repo")" 2>/dev/null && return 0
+    grep -qxF "$branch $tip" "$(tips_file "$repo")" 2>/dev/null && return 0
     if ((FETCH)) && have gh && [[ $(git -C "$repo" remote get-url origin 2>/dev/null) == *github.com* ]]; then
         (cd "$repo" && with_timeout 15 gh pr list --state merged --head "$branch" --json headRefOid --jq '.[].headRefOid' 2>/dev/null) |
             grep -qx "$tip" && return 0
     fi
+    return 1
+}
+
+# worktree_in_use <path> — one of your processes has its cwd inside it (Linux).
+worktree_in_use() {
+    local cwd p
+    [[ -d /proc ]] || return 1
+    for p in /proc/[0-9]*; do
+        [[ -O $p ]] || continue
+        cwd="$(readlink "$p/cwd" 2>/dev/null)" || continue
+        [[ $cwd == "$1" || $cwd == "$1"/* ]] && return 0
+    done
     return 1
 }
 
@@ -233,6 +246,16 @@ worktree_verdict() {
     [[ -d $path ]] || return 0
     if [[ -n $(git -C "$path" status --porcelain --untracked-files=normal 2>/dev/null | head -1) ]]; then
         echo "keep:dirty"
+        return
+    fi
+    # A fresh worktree (no commits yet) is "merged" too: nothing that was
+    # touched in the last day, or that a process is working in, may go.
+    if [[ -n $(find "$path" \( -name .git -o -name node_modules \) -prune -o -newermt '1 day ago' -print -quit 2>/dev/null) ]]; then
+        echo "keep:changed in the last day"
+        return
+    fi
+    if worktree_in_use "$path"; then
+        echo "keep:a process is working in it"
         return
     fi
     local head
@@ -268,6 +291,14 @@ worktree_verdict() {
 clean_repo_worktrees() {
     local repo=$1 base
     remember_remote_tips "$repo" # before --prune forgets branches deleted upstream
+    # A moved repo: reconnect its in-repo worktrees before `prune` below
+    # forgets them (their metadata still points at the old path).
+    local -a moved=()
+    local g
+    while IFS= read -r -d '' g; do moved+=("$(dirname "$g")"); done < <(
+        find "$repo/.worktrees" "$repo/.claude/worktrees" -mindepth 1 -maxdepth 3 -name .git -type f -print0 2>/dev/null
+    )
+    if ((${#moved[@]})) && ((! DRY)); then git -C "$repo" worktree repair "${moved[@]}" >/dev/null 2>&1 || true; fi
     ((FETCH)) && git -C "$repo" remote get-url origin >/dev/null 2>&1 &&
         with_timeout 30 git -C "$repo" fetch --prune --quiet origin 2>/dev/null || true
     if ((DRY)); then
@@ -354,11 +385,37 @@ clean_orphan_worktrees() {
             [[ -n $gitdir ]] || continue
             [[ $gitdir == /* ]] || gitdir="$wt/$gitdir"
             [[ -d $gitdir ]] && continue
-            printf '    %sdrop%s  %s — orphaned (%s) %s\n' "$C_YELLOW" "$C_RESET" "${wt/#$HOME/\~}" "missing gitdir" "$(human_size "$wt")" >&2
-            ((AUTO)) && continue
-            if ((DRY)) || confirm "      delete this directory? [y/N] "; then
-                run rm -rf -- "$wt"
+            # A moved repo leaves stale absolute paths: let git fix those first.
+            local owner=''
+            case $root in
+            */.worktrees) owner="$(dirname "$root")" ;;
+            */.claude/worktrees) owner="$(dirname "$(dirname "$root")")" ;;
+            esac
+            if [[ -n $owner && -d $owner/.git ]] && ((! DRY)); then
+                git -C "$owner" worktree repair "$wt" >/dev/null 2>&1 || true
+                gitdir="$(sed -n 's/^gitdir: //p' "$gitfile")"
+                [[ $gitdir == /* ]] || gitdir="$wt/$gitdir"
+                if [[ -d $gitdir ]]; then
+                    step "repaired ${wt/#$HOME/\~} (its repo had moved)"
+                    continue
+                fi
             fi
+            # No gitdir means git can't tell us about uncommitted work: never
+            # delete without a human looking, and only when untouched for --days.
+            if [[ -n $(find "$wt" -newermt "${DAYS} days ago" -print -quit 2>/dev/null) ]]; then
+                printf '%s    keep  %s (orphaned, but changed in the last %sd — check it by hand)%s\n' "$C_DIM" "${wt/#$HOME/\~}" "$DAYS" "$C_RESET" >&2
+                continue
+            fi
+            printf '    %sdrop%s  %s — orphaned (missing gitdir; uncommitted work cannot be checked) %s\n' "$C_YELLOW" "$C_RESET" "${wt/#$HOME/\~}" "$(human_size "$wt")" >&2
+            ((AUTO)) && continue
+            ((DRY)) && continue
+            if ! has_tty; then
+                step "      needs you at a terminal (-y doesn't cover orphaned worktrees)"
+                continue
+            fi
+            local answer=''
+            read -r -p "      type 'delete' to remove it: " answer </dev/tty || true
+            [[ $answer == delete ]] && run rm -rf -- "$wt"
         done < <(find "$root" -mindepth 1 -maxdepth 3 -name .git -type f -print0 2>/dev/null)
     done
 }
@@ -372,6 +429,9 @@ clean_worktrees() {
     local gitdir repo
     while IFS= read -r -d '' gitdir; do
         repo="$(dirname "$gitdir")"
+        # Every repo, every run: the record is what later proves a deleted
+        # remote branch's tip was pushed.
+        remember_remote_tips "$repo"
         [[ -z $(git -C "$repo" worktree list 2>/dev/null | sed 1d) && -z $(git -C "$repo" for-each-ref --format='%(upstream:track)' refs/heads | grep -F '[gone]') ]] && continue
         step "${repo/#$HOME/\~}"
         clean_repo_worktrees "$repo"
@@ -449,7 +509,7 @@ clean_projects() {
     ((${#hits[@]})) || return 0
     step "${#hits[@]} cache dir(s), $(du -shc "${hits[@]}" 2>/dev/null | tail -1 | awk '{print $1}')"
     for d in "${hits[@]}"; do
-        if ((DRY)); then printf '%s    [dry-run] rm -rf %s%s\n' "$C_DIM" "${d/#$HOME/\~}" "$C_RESET" >&2; else rm -rf -- "$d"; fi
+        if ((DRY)); then printf '%s    [dry-run] rm -rf %s%s\n' "$C_DIM" "${d/#$HOME/\~}" "$C_RESET" >&2; else rm -rf -- "$d" 2>/dev/null || warn "couldn't fully remove ${d/#$HOME/\~} (root-owned files from a container?)"; fi
     done
 }
 

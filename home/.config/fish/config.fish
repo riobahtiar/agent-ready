@@ -49,7 +49,10 @@ set -gx EDITOR (command -s nvim; or command -s vim; or echo nano)
 set -gx VISUAL $EDITOR
 set -gx PAGER less
 set -gx LESS -R
-set -gx PROJECTS_DIR "$HOME/projects"
+# PROJECTS_DIR from config.env when set there (empty = ~/projects).
+set -l projects
+test -r ~/.dotfiles/config.env; and set projects (string match -rg '^PROJECTS_DIR=["\']?([^"\' #]+)' < ~/.dotfiles/config.env)
+set -gx PROJECTS_DIR (string replace -r '^~' $HOME -- (test -n "$projects[1]"; and echo $projects[1]; or echo "$HOME/projects"))
 # Opt out of CLI telemetry (cf, wrangler, Next.js, Homebrew, … honour it).
 set -gx DO_NOT_TRACK 1
 # Headless Linux (the VPS): no browser for OAuth flows — agents print a URL or

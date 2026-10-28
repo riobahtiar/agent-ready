@@ -59,7 +59,8 @@ bashrc_line='[ -r "$HOME/.dotfiles/shell/bashrc.sh" ] && . "$HOME/.dotfiles/shel
 if ! grep -qxF "$bashrc_line" "$HOME/.bashrc" 2>/dev/null; then
     {
         printf '# ~/.dotfiles (kept above the interactive guard)\n%s\n\n' "$bashrc_line"
-        cat "$HOME/.bashrc" 2>/dev/null
+        # A fresh account (macOS uses zsh) may have no ~/.bashrc yet.
+        cat "$HOME/.bashrc" 2>/dev/null || true
     } >"$HOME/.bashrc.new"
     mv "$HOME/.bashrc.new" "$HOME/.bashrc"
 fi
@@ -68,7 +69,9 @@ ok "~/.profile and ~/.bashrc source ~/.dotfiles/shell/"
 log "Secrets file"
 secrets="$HOME/.config/secrets.env"
 if [[ ! -f $secrets ]]; then
-    install -D -m 600 "$DOTFILES_DIR/secrets.env.example" "$secrets"
+    # (BSD install on macOS has no -D)
+    mkdir -p "$(dirname "$secrets")"
+    install -m 600 "$DOTFILES_DIR/secrets.env.example" "$secrets"
     ok "created $secrets (fill in API keys as needed)"
 fi
 chmod 600 "$secrets"

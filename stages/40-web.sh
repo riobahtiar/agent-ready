@@ -12,6 +12,15 @@ log "nginx + certbot"
 apt_install nginx certbot >/dev/null
 as_root install -d -m 755 "$ACME_WEBROOT"
 
+# Snapshot the whole config: if our files make `nginx -t` fail, everything
+# this stage changed goes back, not just one file.
+if ! pre_out="$(as_root nginx -t 2>&1)"; then
+    printf '%s\n' "$pre_out" >&2
+    die "nginx -t already fails before this stage changes anything — fix that first, then: ./install.sh web"
+fi
+snapshot="$(mktemp)"
+as_root tar -C /etc -czf "$snapshot" nginx
+
 # Only the Ubuntu welcome site goes; anything you added by hand stays.
 as_root rm -f /etc/nginx/sites-enabled/default
 install_file "$DOTFILES_DIR/nginx/cloud.conf" /etc/nginx/conf.d/cloud.conf
@@ -21,11 +30,15 @@ done
 install_file "$DOTFILES_DIR/nginx/default.conf" /etc/nginx/sites-available/00-default.conf
 as_root ln -sfn /etc/nginx/sites-available/00-default.conf /etc/nginx/sites-enabled/00-default.conf
 
-if ! as_root nginx -t 2>/dev/null; then
-    as_root nginx -t || true
-    as_root rm -f /etc/nginx/conf.d/cloud.conf
-    warn "nginx rejected conf.d/cloud.conf (likely a directive Ubuntu's nginx.conf now sets) — removed it"
+if ! test_out="$(as_root nginx -t 2>&1)"; then
+    printf '%s\n' "$test_out" >&2
+    as_root rm -rf /etc/nginx.rejected
+    as_root mv /etc/nginx /etc/nginx.rejected
+    as_root tar -C /etc -xzf "$snapshot"
+    rm -f "$snapshot"
+    die "nginx rejected the new config — restored /etc/nginx as it was (rejected copy: /etc/nginx.rejected)"
 fi
+rm -f "$snapshot"
 as_root systemctl enable --now nginx >/dev/null 2>&1
 nginx_reload
 ok "$(nginx -v 2>&1)"
