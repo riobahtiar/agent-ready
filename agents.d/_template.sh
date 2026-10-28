@@ -20,6 +20,8 @@ agent_define NAME \
     guide=- \
     login="NAME login" \
     env="" \
+    state="" \
+    protect="" \
     paths="~/.local/bin/NAME" \
     config="" \
     os="linux macos"

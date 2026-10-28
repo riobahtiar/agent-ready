@@ -34,8 +34,11 @@ reach. The layers below are ordered from lightest to strongest.
   `~/.kube`, `~/.docker`, `~/.cloudflared`, `~/.config/rclone`, `~/.config/gh`,
   wrangler, `~/.npmrc`, `~/.git-credentials`, `~/.netrc`, zrok,
   `~/.config/secrets.env`, `~/.dotfiles/config.env`, all of `~/.hermes`, the
-  Claude/Codex OAuth files and shell history. `sandbox agent X` may use X's own
-  config dir (sign-in, sessions).
+  Claude/Codex OAuth files and shell history. `sandbox agent X` may read X's
+  own config dir (sign-in) and write only its declared `state=` (sessions), and
+  never its `protect=` files (settings, hooks, MCP/plugin config), so a jailed
+  agent can't plant something for its next unjailed run. Residual: Claude keeps
+  MCP server entries in `~/.claude.json`, which it must be able to write.
 - **Writes:** the current directory, `/tmp` and package caches only, and never
   `.env`, `.git/hooks` or `.git/config`.
 

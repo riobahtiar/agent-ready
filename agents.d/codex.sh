@@ -3,6 +3,8 @@
 # (home/.config/mise/conf.d/30-agents.toml).
 agent_define codex \
     env="OPENAI_API_KEY" \
+    state="~/.codex" \
+    protect="~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/prompts" \
     title="Codex (OpenAI)" \
     wrapper=b-codex \
     herdr=codex \

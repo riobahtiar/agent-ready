@@ -120,6 +120,16 @@ else
     warn "dashboard not answering yet — journalctl -u hermes-dashboard -n 50"
 fi
 
+# unpublish — when the dashboard may not be public, a vhost left from an earlier
+# run must not keep serving it.
+unpublish() {
+    if as_root test -e "/etc/nginx/sites-enabled/$HERMES_DOMAIN.conf"; then
+        as_root rm -f "/etc/nginx/sites-enabled/$HERMES_DOMAIN.conf"
+        nginx_reload || true
+        warn "took the existing public dashboard at $HERMES_DOMAIN offline"
+    fi
+}
+
 log "nginx + TLS for $HERMES_DOMAIN"
 allow=''
 if is_true "${HERMES_CLOUDFLARE_ONLY:-false}"; then
@@ -132,6 +142,7 @@ if is_true "${HERMES_CLOUDFLARE_ONLY:-false}"; then
     )" || cf_ips=''
     for ip in $cf_ips; do valid_cidr "$ip" && allow+="    allow $ip;"$'\n'; done
     if [[ -z $allow ]]; then
+        unpublish
         stage_incomplete "couldn't fetch Cloudflare's IP ranges — not publishing the dashboard (fail closed)"
         exit 0
     fi
@@ -142,6 +153,7 @@ for ip in ${HERMES_ALLOW_IPS:-}; do allow+="    allow $ip;"$'\n'; done
 # Never put a dashboard on the internet unless Hermes itself demands a login:
 # it's a web terminal on this machine.
 if [[ $auth_required != true ]]; then
+    unpublish
     stage_incomplete "dashboard auth_required=$auth_required — NOT publishing $HERMES_DOMAIN (fix auth, then: ./install.sh hermes)"
 elif cert_issue "$HERMES_DOMAIN"; then
     # Hermes is optional: a missing certificate (DNS not propagated yet) must

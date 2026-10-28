@@ -87,15 +87,21 @@ cmd_agent() {
     agent_known "$name" || die "unknown agent '$name'"
     need_srt
     have jq || die "jq is needed to build the agent's policy"
-    # The agent may use its OWN config dir (sign-in, sessions) and its own API
-    # key; every other secret stays hidden and unset.
-    local own policy
-    own="$(agent_get "$name" config)"
+    # The agent may READ its own config dir (sign-in) and use its own API key;
+    # it may WRITE only its declared state (sessions), and never the files
+    # that run outside the sandbox later (settings, hooks, MCP/plugin config):
+    # otherwise a jailed agent could plant a hook for its next unjailed run.
+    local own state protect policy
+    own="$(agent_get "$name" config)" state="$(agent_get "$name" state)" protect="$(agent_get "$name" protect)"
+    [[ -n $state ]] || warn "$name declares no writable state: it can read its config but not save sessions here"
     policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-$name.json"
     mkdir -p "$(dirname "$policy")"
-    jq --arg own "$own" '($own | split(" ") | map(select(length > 0))) as $o
+    jq --arg own "$own" --arg state "$state" --arg protect "$protect" '
+        def words: split(" ") | map(select(length > 0));
+        ($own | words) as $o
         | .filesystem.denyRead |= map(select(. as $d | ($o | any(. as $x | $d == $x or ($d | startswith($x + "/")))) | not))
-        | .filesystem.allowWrite += $o' "$HOME/.srt-settings.json" >"$policy"
+        | .filesystem.allowWrite += ($state | words)
+        | .filesystem.denyWrite += ($protect | words)' "$HOME/.srt-settings.json" >"$policy"
     local -a env=()
     # shellcheck disable=SC2046
     mapfile -d '' -t env < <(clean_env $(agent_get "$name" env))

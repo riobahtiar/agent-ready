@@ -81,15 +81,16 @@ TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 if [[ -s /root/.ssh/authorized_keys ]]; then
     install -d -m 700 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.ssh"
     touch "$TARGET_HOME/.ssh/authorized_keys"
-    # Copy the keys WITHOUT their options: cloud images often put
-    # command="echo Please login as ubuntu…;exit 142" on root's key, which
-    # would make the copy useless and, after hardening, lock the user out.
+    # Cloud images put command="echo 'Please login as the user …';exit 142"
+    # on root's key: copied as-is it would lock the user out after hardening,
+    # so only that stub is stripped. Every other option (from=, restrict,
+    # no-*, other forced commands) is a deliberate restriction and stays.
     while IFS= read -r key; do
         [[ -z $key ]] && continue
         grep -qxF "$key" "$TARGET_HOME/.ssh/authorized_keys" || echo "$key" >>"$TARGET_HOME/.ssh/authorized_keys"
     done < <(cat /root/.ssh/authorized_keys /root/.ssh/authorized_keys2 2>/dev/null | awk '
         /^[[:space:]]*(#|$)/ { next }
-        {
+        /command="[^"]*Please login as/ {
             for (i = 1; i <= NF; i++)
                 if ($i ~ /^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9-]+|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)$/) {
                     out = $i
@@ -97,7 +98,8 @@ if [[ -s /root/.ssh/authorized_keys ]]; then
                     print out
                     next
                 }
-        }')
+        }
+        { print }')
     chown "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh/authorized_keys"
     chmod 600 "$TARGET_HOME/.ssh/authorized_keys"
     say "Copied root's SSH keys to $TARGET_USER"
