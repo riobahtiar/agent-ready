@@ -1,0 +1,12 @@
+# Managed by ~/.dotfiles (system/apparmor-bwrap) → /etc/apparmor.d/dotfiles-bwrap
+# Ubuntu 24.04+ blocks unprivileged user namespaces unless an AppArmor profile
+# allows them. bubblewrap needs one to build agent sandboxes (Claude Code's
+# sandbox, srt). This grants `userns` to /usr/bin/bwrap only, rather than
+# turning the restriction off for every program.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile dotfiles-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/dotfiles-bwrap>
+}

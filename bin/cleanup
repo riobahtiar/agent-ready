@@ -1,0 +1,554 @@
+#!/usr/bin/env bash
+# cleanup — reclaim disk and memory from caches, Docker, stale agent worktrees
+# and the residue agents leave behind.
+#
+#   cleanup                     interactive picker at a terminal (preview, then apply)
+#   cleanup caches docker       just these targets (asks before risky steps)
+#   cleanup worktrees -n        preview stale worktrees/branches only
+#   cleanup all --deep -y       everything incl. system + procs, rebuild-heavy caches too
+#   cleanup --auto              what the weekly timer runs: safe subset, no prompts
+#
+# Targets:
+#   caches     npm/bun/pnpm/yarn/uv/pip/go/composer/mise caches
+#   docker     stopped containers, dangling images, build cache, unused networks
+#   worktrees  git worktree metadata, clean+merged/gone/stale worktrees, orphaned
+#              agent worktree dirs, local branches whose upstream is gone
+#   agents     old logs/snapshots of claude, codex, opencode, hermes, … and their /tmp leftovers
+#   projects   regenerable build caches in $PROJECTS_DIR (.turbo, .next/cache, …)
+#   system     apt autoremove/clean, journal vacuum, old snap revisions (sudo)
+#   procs      orphaned agent children (MCP servers, headless browsers, watchers)
+#
+# Options:
+#   -n, --dry-run   show what would happen          -y, --yes     don't ask
+#   --deep          also: go modcache, pub cache, unused Docker images, unused mise versions
+#   --days N        age threshold (default 14)      --volumes     also prune anonymous Docker volumes
+#   --no-fetch      don't `git fetch --prune` before judging worktrees
+#   --auto          = -y, safe targets only, never removes worktrees/branches or kills processes
+#
+# Never touched: dirty worktrees, worktrees with unpushed commits, named Docker
+# volumes, agent transcripts newer than --days.
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+
+# wizard — pick targets and options, preview with -n, then re-run for real.
+wizard() {
+    ui_title "Cleanup · $(df -h "$HOME" | awk 'NR==2 {print $4 " free of " $2}')"
+    local out o days
+    out="$(ui_multi "What should be cleaned?" "caches docker worktrees agents projects" \
+        "caches|Package caches (npm bun pnpm uv pip go composer mise)" \
+        "docker|Docker: stopped containers · dangling images · build cache" \
+        "worktrees|Stale agent worktrees + branches whose remote is gone" \
+        "agents|Old agent logs and /tmp leftovers" \
+        "projects|Build caches in ~/projects (.next/cache · .turbo · …)" \
+        "system|System: apt cache · old journal (sudo)" \
+        "procs|Orphaned agent processes (MCP servers · headless browsers)")" || exit 0
+    [[ -n $out ]] || exit 0
+    local -a args=()
+    mapfile -t args <<<"$out"
+    out="$(ui_multi "Options" "" \
+        "deep|Deep: Go modules · pub cache · unused images and tool versions (slower rebuilds)" \
+        "volumes|Also prune anonymous Docker volumes" \
+        "nofetch|Skip git fetch before judging worktrees (faster · offline)")" || exit 0
+    for o in $out; do
+        case $o in
+        deep) args+=(--deep) ;;
+        volumes) args+=(--volumes) ;;
+        nofetch) args+=(--no-fetch) ;;
+        esac
+    done
+    days="$(ui_input "Treat things untouched for this many days as stale" 14)" || exit 0
+    [[ $days =~ ^[0-9]+$ ]] && args+=(--days "$days")
+
+    ui_title "Preview: cleanup ${args[*]} --dry-run"
+    "$0" "${args[@]}" --dry-run || true
+    echo >&2
+    case "$(ui_choose "Apply it?" \
+        "ask|Apply · ask before each worktree · branch and process" \
+        "yes|Apply all of the above without asking" \
+        "no|Cancel")" in
+    ask) exec "$0" "${args[@]}" ;;
+    yes) exec "$0" "${args[@]}" --yes ;;
+    *) exit 0 ;;
+    esac
+}
+
+if (($# == 0)) && ui_interactive; then
+    wizard
+fi
+
+DRY=0 DEEP=0 DAYS=14 VOLUMES=0 FETCH=1 AUTO=0
+targets=()
+usage() {
+    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+while (($#)); do
+    case $1 in
+    -n | --dry-run) DRY=1 ;;
+    -y | --yes) ASSUME_YES=1 ;;
+    --deep) DEEP=1 ;;
+    --days) DAYS=$2 && shift ;;
+    --volumes) VOLUMES=1 ;;
+    --no-fetch) FETCH=0 ;;
+    --auto) AUTO=1 ASSUME_YES=1 ;;
+    -h | --help) usage ;;
+    all) targets=(caches docker worktrees agents projects system procs) ;;
+    caches | docker | worktrees | agents | projects | system | procs) targets+=("$1") ;;
+    *) usage 2 ;;
+    esac
+    shift
+done
+[[ $DAYS =~ ^[0-9]+$ ]] || die "--days needs a number"
+export ASSUME_YES="${ASSUME_YES:-0}"
+((${#targets[@]})) || targets=(caches docker worktrees agents projects)
+if ((AUTO)); then
+    targets=(caches docker worktrees agents projects)
+    FETCH=0
+fi
+PROJECTS_DIR="${PROJECTS_DIR:-$HOME/projects}"
+
+# run <cmd...> — execute, or print under --dry-run. Failures warn, never abort.
+run() {
+    if ((DRY)); then
+        printf '%s    [dry-run] %s%s\n' "$C_DIM" "$*" "$C_RESET" >&2
+        return 0
+    fi
+    "$@" >/dev/null 2>&1 || warn "failed: $*"
+}
+
+human_size() { du -sh "$@" 2>/dev/null | awk '{print $1}' | head -1; }
+
+# prune_old <dir> <days> [find-expr...] — delete files older than N days.
+prune_old() {
+    local dir=$1 days=$2
+    shift 2
+    [[ -d $dir ]] || return 0
+    local count
+    count="$(find "$dir" -type f -mtime +"$days" "$@" 2>/dev/null | wc -l)"
+    ((count)) || return 0
+    step "${dir/#$HOME/\~}: $count file(s) older than ${days}d"
+    if ((DRY)); then
+        find "$dir" -type f -mtime +"$days" "$@" 2>/dev/null | head -5 | sed "s|^|      |" >&2
+    else
+        # Remove only directories this deletion emptied (never other empty
+        # dirs a tool expects, never above $dir).
+        local f d
+        while IFS= read -r -d '' f; do
+            rm -f -- "$f" 2>/dev/null || continue
+            d="$(dirname "$f")"
+            while [[ $d == "$dir"/* ]] && rmdir -- "$d" 2>/dev/null; do d="$(dirname "$d")"; done
+        done < <(find "$dir" -type f -mtime +"$days" "$@" -print0 2>/dev/null)
+    fi
+}
+
+# ─── caches ───
+clean_caches() {
+    log "Package caches"
+    have npm && step "npm" && run npm cache clean --force
+    have bun && step "bun" && run bun pm cache rm
+    have pnpm && step "pnpm store" && run pnpm store prune
+    have yarn && step "yarn" && run yarn cache clean
+    have uv && step "uv (unused entries)" && run uv cache prune
+    python3 -m pip --version >/dev/null 2>&1 && step "pip" && run python3 -m pip cache purge
+    have go && step "go build/test cache" && run go clean -cache -testcache
+    have composer && step "composer" && run composer clear-cache
+    have mise && step "mise download cache" && run mise cache clear
+    if ((DEEP)); then
+        have go && step "go module cache (--deep)" && run go clean -modcache
+        have flutter && step "pub cache (--deep)" && run flutter pub cache clean --force
+        have mise && step "unused mise tool versions (--deep)" && run mise prune --yes
+        [[ -d $HOME/.gradle/caches ]] && step "gradle caches (--deep)" && run rm -rf "$HOME/.gradle/caches"
+        # Anything else in ~/.cache that nobody touched in a while.
+        prune_old "$HOME/.cache" "$DAYS" -not -path '*/uv/*' -not -path '*/ms-playwright/*' -not -path '*/mise/*'
+    fi
+}
+
+# ─── docker ───
+clean_docker() {
+    log "Docker"
+    if ! have docker || ! docker info >/dev/null 2>&1; then
+        warn "docker not reachable (not installed, or not in the docker group yet)"
+        return 0
+    fi
+    docker system df 2>/dev/null | sed 's/^/    /' >&2
+    local hours=$((DAYS * 24))
+    step "stopped containers (>24h), dangling images, unused networks, build cache >${DAYS}d"
+    run docker container prune --force --filter "until=24h"
+    run docker image prune --force
+    run docker network prune --force
+    run docker builder prune --force --filter "until=${hours}h"
+    if ((DEEP)); then
+        step "unused images older than ${DAYS}d (--deep)"
+        run docker image prune --all --force --filter "until=${hours}h"
+    fi
+    if ((VOLUMES)); then
+        if confirm "  Prune ANONYMOUS docker volumes (data loss if a stopped container still needed one)? [y/N] "; then
+            run docker volume prune --force
+        fi
+    fi
+}
+
+# ─── worktrees ───
+default_branch() {
+    local repo=$1 ref
+    ref="$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [[ -z $ref ]]; then
+        for ref in origin/main origin/master main master; do
+            git -C "$repo" rev-parse --verify --quiet "$ref" >/dev/null && break
+        done
+    fi
+    printf '%s\n' "$ref"
+}
+
+# Remote branch tips seen by earlier runs, so a branch whose remote was
+# deleted (merged PR) can be told apart from one with work never pushed.
+tips_file() { printf '%s/cleanup-remote-tips' "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; }
+remember_remote_tips() {
+    local file
+    file="$(tips_file "$1")"
+    [[ -d $(dirname "$file") ]] || return 0
+    git -C "$1" for-each-ref --format='%(refname:lstrip=3) %(objectname)' refs/remotes/origin 2>/dev/null |
+        grep -v '^HEAD ' >>"$file" || true
+    sort -u -o "$file" "$file" 2>/dev/null || true
+}
+
+# tip_published <repo> <branch> <sha> — the remote had exactly this commit:
+# it's reachable from a remote ref, an earlier run saw it as the remote tip,
+# or GitHub shows a merged PR whose head was this commit.
+tip_published() {
+    local repo=$1 branch=$2 tip=$3
+    [[ -z $(git -C "$repo" rev-list "$tip" --not --remotes 2>/dev/null | head -1) ]] && return 0
+    grep -qx "$branch $tip" "$(tips_file "$repo")" 2>/dev/null && return 0
+    if ((FETCH)) && have gh && [[ $(git -C "$repo" remote get-url origin 2>/dev/null) == *github.com* ]]; then
+        (cd "$repo" && with_timeout 15 gh pr list --state merged --head "$branch" --json headRefOid --jq '.[].headRefOid' 2>/dev/null) |
+            grep -qx "$tip" && return 0
+    fi
+    return 1
+}
+
+# Why a worktree may go: prints a reason, or nothing if it must stay.
+worktree_verdict() {
+    local repo=$1 path=$2 branch=$3 base=$4
+    [[ -d $path ]] || return 0
+    if [[ -n $(git -C "$path" status --porcelain --untracked-files=normal 2>/dev/null | head -1) ]]; then
+        echo "keep:dirty"
+        return
+    fi
+    local head
+    head="$(git -C "$path" rev-parse HEAD 2>/dev/null)" || return 0
+    if [[ -n $base ]] && git -C "$repo" merge-base --is-ancestor "$head" "$base" 2>/dev/null; then
+        echo "merged into $base"
+        return
+    fi
+    if [[ -n $branch ]] && [[ $(git -C "$repo" for-each-ref --format='%(upstream:track)' "refs/heads/$branch") == "[gone]" ]]; then
+        # Its commits are on no remote now, so only a provably pushed tip may go.
+        if tip_published "$repo" "$branch" "$head"; then
+            echo "upstream gone, tip was pushed"
+        else
+            echo "keep:remote branch deleted but HEAD was never seen on it — git log ${base:-origin}..$branch"
+        fi
+        return
+    fi
+    # Unpushed work (commits no remote has) always stays.
+    if [[ -n $(git -C "$repo" rev-list "$head" --not --remotes 2>/dev/null | head -1) ]]; then
+        echo "keep:unpushed"
+        return
+    fi
+    local last_commit age_days
+    last_commit="$(git -C "$path" log -1 --format=%ct 2>/dev/null || echo 0)"
+    age_days=$((($(date +%s) - last_commit) / 86400))
+    if ((age_days > DAYS)) && [[ -z $(find "$path" -maxdepth 2 -newermt "${DAYS} days ago" -not -path '*/.git*' -print -quit 2>/dev/null) ]]; then
+        echo "stale ${age_days}d, nothing unpushed"
+        return
+    fi
+    echo "keep:active"
+}
+
+clean_repo_worktrees() {
+    local repo=$1 base
+    remember_remote_tips "$repo" # before --prune forgets branches deleted upstream
+    ((FETCH)) && git -C "$repo" remote get-url origin >/dev/null 2>&1 &&
+        with_timeout 30 git -C "$repo" fetch --prune --quiet origin 2>/dev/null || true
+    if ((DRY)); then
+        git -C "$repo" worktree prune --dry-run --verbose 2>&1 | sed 's/^/      /' >&2 || true
+    else
+        git -C "$repo" worktree prune 2>/dev/null || true
+    fi
+    base="$(default_branch "$repo")"
+
+    local path='' branch='' locked=0 first=1 line
+    local -a entries=()
+    while IFS= read -r line; do
+        case $line in
+        "worktree "*) path=${line#worktree } branch='' locked=0 ;;
+        "branch refs/heads/"*) branch=${line#branch refs/heads/} ;;
+        locked*) locked=1 ;;
+        "")
+            if ((first)); then
+                first=0 # the main worktree
+            elif ((! locked)) && [[ -n $path ]]; then
+                entries+=("$path|$branch")
+            fi
+            path=''
+            ;;
+        esac
+    done < <(
+        git -C "$repo" worktree list --porcelain 2>/dev/null
+        echo
+    )
+
+    local entry verdict
+    for entry in "${entries[@]}"; do
+        path=${entry%%|*} branch=${entry#*|}
+        verdict="$(worktree_verdict "$repo" "$path" "$branch" "$base")"
+        [[ -z $verdict ]] && continue
+        if [[ $verdict == keep:* ]]; then
+            printf '%s    keep  %s (%s)%s\n' "$C_DIM" "${path/#$HOME/\~}" "${verdict#keep:}" "$C_RESET" >&2
+            continue
+        fi
+        printf '    %sdrop%s  %s [%s] — %s\n' "$C_YELLOW" "$C_RESET" "${path/#$HOME/\~}" "${branch:-detached}" "$verdict" >&2
+        ((AUTO)) && continue
+        if ((DRY)) || confirm "      remove this worktree$([[ -n $branch ]] && echo " and branch $branch")? [y/N] "; then
+            run git -C "$repo" worktree remove "$path"
+            if [[ -n $branch ]]; then
+                # -D only when the remote branch is gone (squash-merged PRs aren't ancestors).
+                if [[ $verdict == "upstream gone"* ]]; then run git -C "$repo" branch -D "$branch"; else run git -C "$repo" branch -d "$branch"; fi
+            fi
+        fi
+    done
+
+    # Branches whose upstream is gone and that no worktree uses.
+    local gone
+    gone="$(git -C "$repo" for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads |
+        awk '$2 == "[gone]" {print $1}')"
+    for branch in $gone; do
+        git -C "$repo" worktree list --porcelain | grep -qx "branch refs/heads/$branch" && continue
+        [[ $(git -C "$repo" branch --show-current) == "$branch" ]] && continue
+        if ! tip_published "$repo" "$branch" "$(git -C "$repo" rev-parse "refs/heads/$branch")"; then
+            printf '%s    keep  branch %s (remote deleted, tip never seen on it)%s\n' "$C_DIM" "$branch" "$C_RESET" >&2
+            continue
+        fi
+        printf '    %sdrop%s  branch %s — upstream gone, tip was pushed\n' "$C_YELLOW" "$C_RESET" "$branch" >&2
+        ((AUTO)) && continue
+        if ((DRY)) || confirm "      delete branch $branch? [y/N] "; then
+            run git -C "$repo" branch -D "$branch"
+        fi
+    done
+}
+
+# Worktree dirs whose .git file points at a gitdir that no longer exists
+# (repo deleted/moved, or `git worktree prune` already forgot them).
+clean_orphan_worktrees() {
+    local roots=("$HOME/.codex/worktrees" "$HOME/.claude/worktrees" "$HOME/.local/share/opencode/worktree")
+    local d
+    while IFS= read -r -d '' d; do roots+=("$d"); done < <(
+        find "$PROJECTS_DIR" -maxdepth 4 -type d \( -path '*/.claude/worktrees' -o -name .worktrees \) -print0 2>/dev/null
+    )
+    local root gitfile wt gitdir
+    for root in "${roots[@]}"; do
+        [[ -d $root ]] || continue
+        while IFS= read -r -d '' gitfile; do
+            wt="$(dirname "$gitfile")"
+            gitdir="$(sed -n 's/^gitdir: //p' "$gitfile")"
+            [[ -n $gitdir ]] || continue
+            [[ $gitdir == /* ]] || gitdir="$wt/$gitdir"
+            [[ -d $gitdir ]] && continue
+            printf '    %sdrop%s  %s — orphaned (%s) %s\n' "$C_YELLOW" "$C_RESET" "${wt/#$HOME/\~}" "missing gitdir" "$(human_size "$wt")" >&2
+            ((AUTO)) && continue
+            if ((DRY)) || confirm "      delete this directory? [y/N] "; then
+                run rm -rf -- "$wt"
+            fi
+        done < <(find "$root" -mindepth 1 -maxdepth 3 -name .git -type f -print0 2>/dev/null)
+    done
+}
+
+clean_worktrees() {
+    log "Git worktrees under ${PROJECTS_DIR/#$HOME/\~}$( ((AUTO)) && echo ' (report only)')"
+    [[ -d $PROJECTS_DIR ]] || {
+        warn "$PROJECTS_DIR does not exist"
+        return 0
+    }
+    local gitdir repo
+    while IFS= read -r -d '' gitdir; do
+        repo="$(dirname "$gitdir")"
+        [[ -z $(git -C "$repo" worktree list 2>/dev/null | sed 1d) && -z $(git -C "$repo" for-each-ref --format='%(upstream:track)' refs/heads | grep -F '[gone]') ]] && continue
+        step "${repo/#$HOME/\~}"
+        clean_repo_worktrees "$repo"
+    done < <(find "$PROJECTS_DIR" -maxdepth 4 -name .git -type d -prune -print0 2>/dev/null)
+    clean_orphan_worktrees
+}
+
+# ─── agents ───
+clean_agents() {
+    log "Agent residue (older than ${DAYS}d)"
+    # Claude Code prunes its own transcripts (cleanupPeriodDays in ~/.claude/settings.json).
+    prune_old "$HOME/.claude/shell-snapshots" "$DAYS"
+    prune_old "$HOME/.claude/debug" "$DAYS"
+    prune_old "$HOME/.claude/todos" "$DAYS"
+    prune_old "$HOME/.claude/paste-cache" "$DAYS"
+    prune_old "$HOME/.codex/log" "$DAYS"
+    prune_old "$HOME/.local/share/opencode/log" "$DAYS"
+    prune_old "$HOME/.hermes/logs" "$DAYS"
+    local dir
+    for dir in "$HOME/.grok" "$HOME/.omp" "$HOME/.pi" "$HOME/.muse" "$HOME/.local/state/herdr" "$HOME/.config/herdr"; do
+        prune_old "$dir" "$DAYS" -name '*.log'
+    done
+    if ((DEEP)); then
+        # Session history: resumable conversations. Only with --deep.
+        prune_old "$HOME/.codex/sessions" "$DAYS"
+        prune_old "$HOME/.local/share/opencode/snapshot" "$DAYS"
+        prune_old "$HOME/.local/share/opencode/storage" "$DAYS"
+    fi
+
+    step "/tmp leftovers owned by $(id -un) (>1 day)"
+    local -a tmp_hits=()
+    while IFS= read -r -d '' dir; do tmp_hits+=("$dir"); done < <(
+        find /tmp /var/tmp -maxdepth 1 -mindepth 1 -user "$(id -u)" -mtime +1 \( \
+            -name 'claude-*' -o -name 'codex-*' -o -name 'opencode*' -o -name 'omp-*' -o -name 'grok-*' \
+            -o -name 'muse-*' -o -name 'hermes*' -o -name 'playwright*' -o -name 'puppeteer_dev_*' \
+            -o -name '.org.chromium.*' -o -name 'tsx-*' -o -name 'vite-*' -o -name 'bun-*' -o -name 'go-build*' \
+            -o -name 'flutter_tools.*' -o -name 'tmp*.mcp*' \) -print0 2>/dev/null
+    )
+    local base tool kept=0
+    for dir in "${tmp_hits[@]}"; do
+        # A long-running session can own an old top-level dir: skip anything
+        # touched in the last day, and anything of an agent that's running.
+        if [[ -d $dir && -n $(find "$dir" -mmin -1440 -print -quit 2>/dev/null) ]]; then
+            kept=$((kept + 1))
+            continue
+        fi
+        base="$(basename "$dir")" tool=${base#.}
+        tool=${tool%%[-._]*}
+        if [[ -n $tool ]] && pgrep -u "$(id -u)" -x "$tool" >/dev/null 2>&1; then
+            kept=$((kept + 1))
+            continue
+        fi
+        if ((DRY)); then printf '%s    [dry-run] rm -rf %s%s\n' "$C_DIM" "$dir" "$C_RESET" >&2; else rm -rf -- "$dir" 2>/dev/null || true; fi
+    done
+    ((${#tmp_hits[@]})) && step "$((${#tmp_hits[@]} - kept)) tmp item(s)$( ((kept)) && echo ", $kept kept (in use)")"
+    return 0
+}
+
+# ─── projects ───
+clean_projects() {
+    log "Build caches in ${PROJECTS_DIR/#$HOME/\~} (untouched >${DAYS}d)"
+    [[ -d $PROJECTS_DIR ]] || return 0
+    local -a hits=()
+    local d
+    while IFS= read -r -d '' d; do
+        [[ -n $(find "$d" -newermt "${DAYS} days ago" -print -quit 2>/dev/null) ]] && continue
+        hits+=("$d")
+    done < <(find "$PROJECTS_DIR" -type d \( -name node_modules -prune -false -o \
+        -name .turbo -o -name .parcel-cache -o -name .pytest_cache -o -name .ruff_cache -o -name .mypy_cache \
+        -o -path '*/.next/cache' -o -path '*/node_modules/.cache' \) -prune -print0 2>/dev/null)
+    # node_modules/.cache lives inside a pruned tree; look for it explicitly.
+    while IFS= read -r -d '' d; do
+        [[ -n $(find "$d" -newermt "${DAYS} days ago" -print -quit 2>/dev/null) ]] || hits+=("$d")
+    done < <(find "$PROJECTS_DIR" -maxdepth 5 -type d -path '*/node_modules/.cache' -prune -print0 2>/dev/null)
+    ((${#hits[@]})) || return 0
+    step "${#hits[@]} cache dir(s), $(du -shc "${hits[@]}" 2>/dev/null | tail -1 | awk '{print $1}')"
+    for d in "${hits[@]}"; do
+        if ((DRY)); then printf '%s    [dry-run] rm -rf %s%s\n' "$C_DIM" "${d/#$HOME/\~}" "$C_RESET" >&2; else rm -rf -- "$d"; fi
+    done
+}
+
+# ─── system ───
+clean_system() {
+    log "System"
+    if [[ $OS_KIND == linux ]] && ! is_root && ! sudo -v 2>/dev/null; then
+        warn "no sudo — skipping system cleanup"
+        return 0
+    fi
+    case $OS_FAMILY in
+    debian)
+        step "apt autoremove + clean"
+        run as_root apt-get autoremove --purge -y
+        run as_root apt-get clean
+        ;;
+    arch)
+        step "pacman cache (keep the last 2 versions) + orphans"
+        if have paccache; then run as_root paccache -rk2; else run as_root pacman -Sc --noconfirm; fi
+        local orphans
+        orphans="$(pacman -Qdtq 2>/dev/null || true)"
+        # shellcheck disable=SC2086
+        [[ -n $orphans ]] && run as_root pacman -Rns --noconfirm $orphans
+        ;;
+    fedora)
+        step "dnf autoremove + clean"
+        run as_root dnf -y autoremove
+        run as_root dnf clean packages
+        ;;
+    macos)
+        step "brew cleanup (old versions, download cache)"
+        run brew cleanup --prune=all
+        return 0
+        ;;
+    esac
+    if ((HAS_SYSTEMD)); then
+        local keep=$((DAYS < 7 ? 7 : DAYS))
+        step "journal older than ${keep}d"
+        run as_root journalctl --vacuum-time="${keep}d"
+        run as_root find /var/lib/systemd/coredump -type f -mtime +7 -delete
+    fi
+    if have snap; then
+        local name rev
+        while read -r name rev; do
+            step "snap $name (disabled revision $rev)"
+            run as_root snap remove "$name" --revision="$rev"
+        done < <(snap list --all 2>/dev/null | awk '/disabled/ {print $1, $3}')
+    fi
+}
+
+# ─── procs ───
+clean_procs() {
+    log "Orphaned agent child processes"
+    if [[ $OS_KIND != linux ]]; then
+        step "Linux only (needs ps etimes) — on macOS use Activity Monitor"
+        return 0
+    fi
+    # Agents spawn MCP servers, headless browsers, LSPs and watchers; when the
+    # agent dies uncleanly they get re-parented to init / the user's systemd.
+    local user_systemd pattern
+    user_systemd="$(pgrep -u "$(id -u)" -x systemd | head -1 || true)"
+    pattern='mcp|modelcontextprotocol|chrome|chromium|headless_shell|playwright|puppeteer|esbuild|tsserver|typescript-language-server|vite|next-server|next dev|--watch|watchexec|gopls|pyright|dart language-server|flutter_tools'
+    local -a pids=()
+    local pid ppid etimes rss args
+    while read -r pid ppid etimes rss args; do
+        [[ $ppid == 1 || $ppid == "$user_systemd" ]] || continue
+        ((etimes > 3600)) || continue
+        [[ $args =~ $pattern ]] || continue
+        # Re-parented to the user manager is also what a healthy systemd
+        # --user service looks like: skip any unit's main process.
+        local unit main
+        unit="$(sed -n 's#.*/\([^/]*\.service\)$#\1#p' "/proc/$pid/cgroup" 2>/dev/null | head -1)"
+        if [[ -n $unit ]]; then
+            main="$(systemctl --user show -p MainPID --value "$unit" 2>/dev/null || true)"
+            [[ $main == "$pid" ]] && continue
+            main="$(systemctl show -p MainPID --value "$unit" 2>/dev/null || true)"
+            [[ $main == "$pid" ]] && continue
+        fi
+        pids+=("$pid")
+        printf '    %6s  %6s MB  %5sh  %s\n' "$pid" "$((rss / 1024))" "$((etimes / 3600))" "${args:0:90}" >&2
+    done < <(ps -u "$(id -u)" -o pid=,ppid=,etimes=,rss=,args=)
+    ((${#pids[@]})) || {
+        step "none"
+        return 0
+    }
+    ((DRY)) && return 0
+    if confirm "  Terminate these ${#pids[@]} process(es)? [y/N] "; then
+        kill -TERM "${pids[@]}" 2>/dev/null || true
+        sleep 5
+        kill -KILL "${pids[@]}" 2>/dev/null || true
+        ok "terminated"
+    fi
+}
+
+before="$(df -Pk "$HOME" | awk 'NR==2 {print $4}')"
+((DRY)) && log "${C_YELLOW}dry run${C_RESET} — nothing will be deleted"
+for target in "${targets[@]}"; do
+    "clean_$target"
+done
+after="$(df -Pk "$HOME" | awk 'NR==2 {print $4}')"
+freed=$(((after - before) / 1024))
+((DRY)) || ok "freed ~${freed} MB · $(df -h "$HOME" | awk 'NR==2 {print $4 " free of " $2}')"

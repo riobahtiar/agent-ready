@@ -1,0 +1,24 @@
+# Managed by ~/.dotfiles (systemd/hermes-dashboard.service) — rendered by stages/80-hermes.sh
+# Loopback only: nginx terminates TLS for the public hostname and proxies here.
+[Unit]
+Description=Hermes Agent web dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__HOME__
+Environment=HOME=__HOME__
+Environment=PATH=__HOME__/.local/bin:__HOME__/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-__HOME__/.hermes/.env
+ExecStart=__HERMES_BIN__ dashboard --host 127.0.0.1 --port __PORT__ --no-open
+Restart=always
+RestartSec=10
+# 78 = another dashboard already serves this host; don't restart-loop on it.
+RestartPreventExitStatus=78
+MemoryHigh=768M
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

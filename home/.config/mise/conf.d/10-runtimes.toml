@@ -1,0 +1,10 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/10-runtimes.toml) — language runtimes.
+[tools]
+node = "lts"
+bun = "latest"
+go = "latest"
+python = "3.13"
+uv = "latest"
+pnpm = "latest"
+# Same definition as the laptop: Flutter publishes linux-x64 and macOS SDKs (no linux-arm64).
+flutter = { version = "latest", platforms = { linux-x64 = { url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz" }, macos-arm64 = { url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip" } }, version_expr = 'fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ replace(#.version, "-stable", "") }) | sortVersions()', version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json" }

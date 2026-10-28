@@ -1,0 +1,29 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/00-settings.toml) — global mise settings.
+#
+# Everything this repo gives mise lives in conf.d/, one group per file, so
+# adding or retiring a tool is a one-line change (docs/06-tools-and-agents.md):
+#   00-settings.toml   this file
+#   10-runtimes.toml   node bun go python uv pnpm flutter
+#   20-languages.toml  gopls golangci-lint ruff typescript
+#   30-agents.toml     agent CLIs that ship as packages (codex)
+#   35-ai.toml         LLM tooling (ccusage, repomix; more commented out)
+#   40-cli.toml        modern CLI (rg fd fzf bat ast-grep gum …)
+#   45-cloud.toml      aws-cli s5cmd rclone wrangler cf opentofu
+#   46-sandbox.toml    srt (agent sandbox) devcontainer
+#   47-delivery.toml   hurl oha duckdb usql process-compose sops trivy …
+#   60-network.toml    tunnels: cloudflared zrok
+#
+# ~/.config/mise/config.toml is NOT managed here: it's yours (and Omarchy's),
+# `mise use -g` writes to it, and anything in it overrides these files.
+# Kept off mise on purpose: PHP (system php-fpm — nginx needs it), Docker
+# (system package), and agent CLIs with their own updater (agents.d/).
+
+[settings]
+# Honor .nvmrc / .node-version / .python-version in projects.
+idiomatic_version_file_enable_tools = ["node", "python"]
+# 4 vCPU / 6 GB: don't let parallel installs and compiles starve running agents.
+jobs = 2
+# Agents run non-interactively — a "trust this config?" prompt would hang them.
+trusted_config_paths = ["~/projects", "~/.dotfiles"]
+# Missing per-project tools install on first use instead of erroring.
+not_found_auto_install = true

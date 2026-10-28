@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# doctor — one-screen health check for this VPS.
+#   doctor           full report
+#   doctor --brief   services, resources and exposure only (used at the end of install.sh)
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/agents.sh"
+load_config
+
+BRIEF=0
+[[ ${1:-} == --brief ]] && BRIEF=1
+problems=0
+bad() {
+    printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*"
+    problems=$((problems + 1))
+}
+good() { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+meh() { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+section() { printf '\n%s%s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
+# sudo without prompting; empty output when not allowed.
+nsudo() { if is_root; then "$@"; else sudo -n "$@" 2>/dev/null; fi; }
+
+section "System — $(hostname) · $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' (WSL)') · $(uname -r) · profile $PROFILE"
+if [[ $OS_KIND == linux ]]; then
+    read -r load1 _ </proc/loadavg
+    cores="$(nproc)"
+    awk -v l="$load1" -v c="$cores" 'BEGIN { exit !(l > c * 1.5) }' && bad "load $load1 on $cores cores" || good "load $load1 on $cores cores"
+
+    mem_avail_mb=$(($(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1024))
+    mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
+    if ((mem_avail_mb < 700)); then bad "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; else good "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; fi
+    swap_line="$(swapon --show=NAME,SIZE,USED --noheadings 2>/dev/null | tr -s ' ' | paste -sd ',' -)"
+    [[ -n $swap_line ]] && good "swap: $swap_line" || meh "no swap active"
+
+    disk_pct="$(df -P / | awk 'NR==2 {gsub("%", "", $5); print $5}')"
+    disk_free="$(df -h / | awk 'NR==2 {print $4}')"
+    if ((disk_pct >= 85)); then bad "disk: ${disk_pct}% used, $disk_free free — run: cleanup"; else good "disk: ${disk_pct}% used, $disk_free free"; fi
+    [[ -f /var/run/reboot-required ]] && meh "reboot required ($(paste -sd ' ' /var/run/reboot-required.pkgs 2>/dev/null | cut -c1-60))"
+else
+    disk_free="$(df -h / | awk 'NR==2 {print $4}')"
+    good "load $(sysctl -n vm.loadavg | awk '{print $2}') on $(sysctl -n hw.ncpu) cores · disk $disk_free free"
+fi
+
+if ((HAS_SYSTEMD)); then
+    section "Services"
+    # 26.04 socket-activates sshd: ssh.socket is what must be up.
+    units=(docker cloud-cleanup.timer)
+    [[ $PROFILE == server ]] && units=(ssh.socket nginx docker fail2ban unattended-upgrades cloud-cleanup.timer)
+    is_true "$TAILSCALE" && units+=(tailscaled)
+    [[ $PROFILE == server ]] && is_true "$HERMES" && units+=(hermes-dashboard hermes-gateway)
+    for unit in "${units[@]}"; do
+        if ! systemctl cat "$unit" >/dev/null 2>&1; then
+            meh "$unit not installed"
+            continue
+        fi
+        state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+        enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+        case $state in
+        active) good "$unit" ;;
+        inactive) [[ $enabled == enabled ]] && bad "$unit inactive (enabled)" || meh "$unit not running" ;;
+        '') meh "$unit: systemd not reachable" ;;
+        *) bad "$unit $state" ;;
+        esac
+    done
+    for fpm in /run/php/php[0-9]*-fpm.sock; do [[ -S $fpm ]] && good "php-fpm ($(basename "$fpm" .sock))"; done
+    if ufw_status="$(nsudo ufw status)" && [[ -n $ufw_status ]]; then
+        [[ $ufw_status == *"Status: active"* ]] && good "ufw active" || bad "ufw inactive"
+    fi
+
+    section "Exposure (listening on non-loopback addresses)"
+    while read -r addr proc; do
+        port=${addr##*:}
+        case $port in
+        22 | 80 | 443) good "$addr ${proc:-}" ;;
+        *) bad "$addr ${proc:-} — public? bind it to 127.0.0.1 and use: site add" ;;
+        esac
+    done < <(ss -tlnpH 2>/dev/null | awk '$4 !~ /^(127\.|\[::1\]|\[::ffff:127|100\.)/ {p=$6; sub(/.*\(\("/, "", p); sub(/".*/, "", p); print $4, p}' | sort -u)
+fi
+
+if ((! BRIEF)); then
+    section "Certificates"
+    if certs="$(nsudo certbot certificates 2>/dev/null)" && [[ -n $certs ]]; then
+        awk '/Certificate Name:/ {n=$3} /Expiry Date:/ {sub(/.*Expiry Date: /, ""); print n " — " $0}' <<<"$certs" | while read -r line; do
+            [[ $line == *INVALID* || $line == *EXPIRED* ]] && bad "$line" || good "$line"
+        done
+    else
+        meh "run 'sudo doctor' (or sudo -v first) to read certificates"
+    fi
+
+    if [[ -n $(env_get "$HOME/.hermes/.env" HERMES_DASHBOARD_BASIC_AUTH_USERNAME 2>/dev/null) ]] || systemctl is-enabled hermes-dashboard >/dev/null 2>&1; then
+        section "Hermes"
+        if status="$(curl -fsS --max-time 3 http://127.0.0.1:$HERMES_DASHBOARD_PORT/api/status 2>/dev/null)"; then
+            [[ $(jq -r '.auth_required' <<<"$status" 2>/dev/null) == true ]] && good "dashboard auth required" || bad "dashboard reachable WITHOUT auth"
+        else
+            bad "dashboard not answering on 127.0.0.1:$HERMES_DASHBOARD_PORT"
+        fi
+        [[ -n $(env_get "$HOME/.hermes/.env" TELEGRAM_BOT_TOKEN) ]] && good "telegram token set" || meh "telegram token not set (hermes gateway setup)"
+        [[ -n $(env_get "$HOME/.hermes/.env" TELEGRAM_ALLOWED_USERS) ]] && good "telegram allowlist set" || meh "no TELEGRAM_ALLOWED_USERS — anyone can request pairing"
+    fi
+
+    section "Toolchain"
+    for t in git:--version mise:--version node:--version bun:--version go:version python:--version uv:--version \
+        aws:--version wrangler:--version cf:--version rclone:version srt:--version tailscale:version cloudflared:--version \
+        php:--version composer:--version flutter:--version docker:--version nginx:-v fish:--version; do
+        bin=${t%%:*} flag=${t#*:}
+        if have "$bin"; then
+            v="$(with_timeout 10 "$bin" "$flag" 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+            printf '  %-9s %s\n' "$bin" "${v:-?}"
+        else
+            printf '  %-9s %s\n' "$bin" "$C_DIM(missing)$C_RESET"
+        fi
+    done
+
+    section "Agents"
+    agents_table | sed 's/^/  /'
+
+    section "Disk hogs"
+    du -sh "$HOME/.cache" "$HOME/.local/share/mise" "$HOME/.claude" "$HOME/.codex" "$HOME/.hermes" "$HOME/projects" 2>/dev/null | sort -rh | sed 's/^/  /'
+    have docker && docker system df 2>/dev/null | sed 's/^/  /'
+    [[ -d $DOTFILES_DIR/.git ]] && [[ -n $(git -C "$DOTFILES_DIR" status --porcelain) ]] &&
+        meh "~/.dotfiles has uncommitted changes (an installer may have edited a linked file)"
+fi
+
+echo
+((problems)) && printf '%s%d problem(s)%s\n' "$C_RED" "$problems" "$C_RESET" || printf '%sall good%s\n' "$C_GREEN" "$C_RESET"
+exit $((problems > 0))

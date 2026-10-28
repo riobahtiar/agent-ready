@@ -1,0 +1,24 @@
+{
+  "network": {
+    "allowedDomains": [
+      "github.com", "*.github.com", "*.githubusercontent.com", "ghcr.io",
+      "registry.npmjs.org", "*.npmjs.org", "registry.yarnpkg.com", "bun.sh", "*.bun.sh",
+      "pypi.org", "files.pythonhosted.org",
+      "proxy.golang.org", "sum.golang.org", "storage.googleapis.com",
+      "packagist.org", "repo.packagist.org", "pub.dev", "*.pub.dev",
+      "api.anthropic.com", "*.anthropic.com", "claude.ai", "*.claude.ai",
+      "api.openai.com", "*.openai.com", "chatgpt.com", "*.chatgpt.com",
+      "api.x.ai", "openrouter.ai", "generativelanguage.googleapis.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh", "~/.aws", "~/.gnupg", "~/.cloudflared", "~/.config/rclone",
+      "~/.config/secrets.env", "~/.hermes/.env", "~/.dotfiles/config.env",
+      "~/.config/gh/hosts.yml", "~/.docker/config.json"
+    ],
+    "allowWrite": [".", "/tmp", "~/.cache", "~/.npm", "~/.bun", "~/.local/share/mise", "~/.local/share/pnpm", "~/go/pkg"],
+    "denyWrite": [".env", ".env.local", ".git/hooks", ".git/config"]
+  }
+}

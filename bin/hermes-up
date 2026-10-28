@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# hermes-up — finish Hermes after `hermes setup`: install the messaging gateway
+# (Telegram) as a boot-time system service that runs as you, then restart the
+# dashboard. Uses Hermes' own service installer (`gateway install --system`).
+#   hermes-up            install/refresh + start
+#   hermes-up status     show both services
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+load_config
+
+hermes="$(command -v hermes)" || die "hermes not on PATH — run: ./install.sh hermes"
+env_file="$HOME/.hermes/.env"
+
+if [[ ${1:-} == status ]]; then
+    sudo "$hermes" gateway status --system || true
+    systemctl status hermes-dashboard --no-pager --lines 5 || true
+    exit 0
+fi
+
+[[ -f $HOME/.hermes/config.yaml ]] || die "no ~/.hermes/config.yaml yet — run 'hermes setup' first"
+if [[ -z $(env_get "$env_file" TELEGRAM_BOT_TOKEN) ]]; then
+    warn "TELEGRAM_BOT_TOKEN not in ~/.hermes/.env — starting the gateway wizard"
+    "$hermes" gateway setup
+fi
+[[ -n $(env_get "$env_file" TELEGRAM_ALLOWED_USERS) ]] ||
+    warn "TELEGRAM_ALLOWED_USERS is empty: unknown Telegram users can request pairing codes"
+
+# A user-level unit would conflict with the system one; Hermes warns about both.
+if systemctl --user is-enabled hermes-gateway >/dev/null 2>&1; then
+    log "Removing the user-level gateway unit (switching to system scope)"
+    "$hermes" gateway stop || true
+    systemctl --user disable --now hermes-gateway || true
+fi
+
+log "Installing the gateway as a system service (sudo)"
+sudo "$hermes" gateway install --system
+sudo "$hermes" gateway start --system
+sudo systemctl restart hermes-dashboard
+
+ok "gateway + dashboard running"
+step "logs: journalctl -u hermes-gateway -f   ·   journalctl -u hermes-dashboard -f"
+step "message your bot on Telegram to test; approve strangers with: hermes pairing approve telegram <code>"
