@@ -54,7 +54,15 @@ if ((CHECK)); then
     log "System packages ($OS_FAMILY)"
     case $OS_FAMILY in
     debian) n="$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)" ;;
-    arch) n="$( (checkupdates 2>/dev/null || pacman -Qu 2>/dev/null) | wc -l)" ;; # checkupdates: pacman-contrib, no root
+    arch)
+        # "Nothing to update" is exit 2 for checkupdates (pacman-contrib, no
+        # root) and 1 for pacman -Qu: an empty answer, not an error.
+        if have checkupdates; then
+            n="$(checkupdates 2>/dev/null | wc -l || true)"
+        else
+            n="$(pacman -Qu 2>/dev/null | wc -l || true)"
+        fi
+        ;;
     fedora) n="$(dnf -q check-update 2>/dev/null | grep -c '^[a-zA-Z0-9]' || true)" ;;
     macos) n="$(brew outdated 2>/dev/null | wc -l)" ;;
     *) n='?' ;;
