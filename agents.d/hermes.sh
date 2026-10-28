@@ -4,8 +4,7 @@
 # install hermes` gives you just the CLI.
 agent_define hermes \
     env="ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY" \
-    state="~/.hermes" \
-    protect="~/.hermes/.env ~/.hermes/config.yaml ~/.hermes/hooks ~/.hermes/skills ~/.hermes/plugins" \
+    state="~/.hermes/sessions ~/.hermes/logs" \
     title="Hermes Agent (Nous)" \
     wrapper=b-hermes \
     herdr=hermes \

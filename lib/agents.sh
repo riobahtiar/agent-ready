@@ -24,9 +24,9 @@ declare -gA AGENT_META=()
 #   config   settings/history, removed only by `agents remove <name> --purge`
 #            (also what `sandbox agent <name>` may read and write)
 #   env      API-key variables the agent needs inside `sandbox agent` (others stay unset)
-#   state    what `sandbox agent` may write (sessions/cache); empty = read-only
-#   protect  never writable there, even inside state: anything that runs outside
-#            the sandbox later (settings, hooks, MCP/plugin config, instructions)
+#   state    the ONLY paths `sandbox agent` may write: session/log dirs (files if
+#            the name has a dot). Never config, hooks, plugins, skills, MCP
+#            settings or the agent's code: those run outside the sandbox later.
 #   os       where it runs: linux macos (default both)
 #   managed  "stage:<name>" when a stage owns install (hermes)
 agent_define() {

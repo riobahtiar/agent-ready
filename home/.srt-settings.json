@@ -62,12 +62,8 @@
     "allowWrite": [
       ".",
       "/tmp",
-      "~/.cache",
       "~/.npm",
-      "~/.bun",
-      "~/.local/share/mise",
-      "~/.local/share/pnpm",
-      "~/go/pkg"
+      "~/.local/share/pnpm"
     ],
     "denyWrite": [
       ".env",

@@ -59,10 +59,19 @@ cmd_check() {
 # Only these variables cross into the sandbox: the shells export every key in
 # ~/.config/secrets.env, and a sandboxed command must not inherit them.
 SAFE_ENV=(PATH HOME USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL TZ TMPDIR EDITOR PAGER NO_COLOR DO_NOT_TRACK)
+# Tool caches and installs outside the project (mise, ~/.bun, ~/.cache, the
+# Go module cache) hold code that runs UNsandboxed later, so they're
+# read-only inside. Sandboxed commands get throwaway caches instead. (npm and
+# pnpm stay shared: their stores are content-addressed and integrity-checked.)
+SANDBOX_CACHE="${TMPDIR:-/tmp}/sandbox-cache-$(id -u)"
 clean_env() {
     local v
     local -a keep=()
     for v in "${SAFE_ENV[@]}" "$@"; do [[ -n ${!v:-} ]] && keep+=("$v=${!v}"); done
+    (umask 077 && mkdir -p "$SANDBOX_CACHE")
+    keep+=("XDG_CACHE_HOME=$SANDBOX_CACHE/xdg" "GOCACHE=$SANDBOX_CACHE/go-build" "GOMODCACHE=$SANDBOX_CACHE/go-mod"
+        "UV_CACHE_DIR=$SANDBOX_CACHE/uv" "PIP_CACHE_DIR=$SANDBOX_CACHE/pip" "BUN_INSTALL_CACHE_DIR=$SANDBOX_CACHE/bun"
+        "MISE_CACHE_DIR=$SANDBOX_CACHE/mise" "PUB_CACHE=$SANDBOX_CACHE/pub" "COMPOSER_CACHE_DIR=$SANDBOX_CACHE/composer")
     printf '%s\0' "${keep[@]}"
 }
 
@@ -87,13 +96,19 @@ cmd_agent() {
     agent_known "$name" || die "unknown agent '$name'"
     need_srt
     have jq || die "jq is needed to build the agent's policy"
-    # The agent may READ its own config dir (sign-in) and use its own API key;
-    # it may WRITE only its declared state (sessions), and never the files
-    # that run outside the sandbox later (settings, hooks, MCP/plugin config):
-    # otherwise a jailed agent could plant a hook for its next unjailed run.
-    local own state protect policy
+    # The agent may READ its own config dir (sign-in) and use its own API key.
+    # It may WRITE only the session/log paths its module lists (an allowlist:
+    # a denylist of "dangerous" config is never complete), so a jailed agent
+    # can't plant a hook, plugin or MCP entry that runs unjailed next time.
+    local own state protect policy p
     own="$(agent_get "$name" config)" state="$(agent_get "$name" state)" protect="$(agent_get "$name" protect)"
     [[ -n $state ]] || warn "$name declares no writable state: it can read its config but not save sessions here"
+    # Create them first: srt can only bind paths that exist.
+    for p in $state; do
+        p="$(_expand_home "$p")"
+        [[ -e $p ]] && continue
+        if [[ $(basename "$p") == *.* ]]; then mkdir -p "$(dirname "$p")" && : >>"$p"; else mkdir -p "$p"; fi
+    done
     policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-$name.json"
     mkdir -p "$(dirname "$policy")"
     jq --arg own "$own" --arg state "$state" --arg protect "$protect" '

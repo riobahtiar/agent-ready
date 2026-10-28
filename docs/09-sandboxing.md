@@ -35,12 +35,17 @@ reach. The layers below are ordered from lightest to strongest.
   wrangler, `~/.npmrc`, `~/.git-credentials`, `~/.netrc`, zrok,
   `~/.config/secrets.env`, `~/.dotfiles/config.env`, all of `~/.hermes`, the
   Claude/Codex OAuth files and shell history. `sandbox agent X` may read X's
-  own config dir (sign-in) and write only its declared `state=` (sessions), and
-  never its `protect=` files (settings, hooks, MCP/plugin config), so a jailed
-  agent can't plant something for its next unjailed run. Residual: Claude keeps
-  MCP server entries in `~/.claude.json`, which it must be able to write.
-- **Writes:** the current directory, `/tmp` and package caches only, and never
-  `.env`, `.git/hooks` or `.git/config`.
+  own config dir (sign-in) but write only the session/log paths its module
+  lists (`state=`, an allowlist). Settings, hooks, plugins, skills, MCP config
+  (`~/.claude.json`) and the agent's code stay read-only, so a jailed agent
+  can't plant something for its next unjailed run. The price: an agent can't
+  change its own settings, or refresh an expired OAuth token, while jailed. For
+  Claude Code, its built-in sandbox (below) is usually the better fit.
+- **Writes:** the current directory, `/tmp`, and the npm/pnpm stores
+  (content-addressed, integrity-checked), and never `.env`, `.git/hooks` or
+  `.git/config`. Tool installs and caches that run unsandboxed later (mise,
+  `~/.bun`, `~/.cache`, the Go module cache) are read-only; sandboxed commands
+  get throwaway caches in a private temp dir instead (`$TMPDIR/sandbox-cache-<uid>`).
 
 Need another domain (your API, a CDN)? Add it to `allowedDomains` in
 `home/.srt-settings.json`. It's linked, so it applies immediately.

@@ -2,8 +2,7 @@
 # Claude Code (Anthropic) — native installer, self-updating. https://code.claude.com/docs
 agent_define claude \
     env="ANTHROPIC_API_KEY" \
-    state="~/.claude ~/.claude.json" \
-    protect="~/.claude/settings.json ~/.claude/settings.local.json ~/.claude/hooks ~/.claude/commands ~/.claude/agents ~/.claude/plugins ~/.claude/skills ~/.claude/CLAUDE.md" \
+    state="~/.claude/projects ~/.claude/todos ~/.claude/shell-snapshots ~/.claude/session-env ~/.claude/file-history ~/.claude/paste-cache ~/.claude/debug ~/.claude/statsig" \
     title="Claude Code (Anthropic)" \
     wrapper=b-claude \
     herdr=claude \

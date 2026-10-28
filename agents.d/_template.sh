@@ -21,7 +21,6 @@ agent_define NAME \
     login="NAME login" \
     env="" \
     state="" \
-    protect="" \
     paths="~/.local/bin/NAME" \
     config="" \
     os="linux macos"
