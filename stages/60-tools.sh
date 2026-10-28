@@ -2,6 +2,7 @@
 # stage-user: user
 # stage-os: any
 # stage-profile: all
+# stage-inputs: home/.config/mise home/.config/fish/fish_plugins
 # stage-desc: mise runtimes + CLI tools (node, bun, go, python/uv, flutter, rg, ast-grep…), fisher plugins
 set -Eeuo pipefail
 source "$DOTFILES_DIR/lib/common.sh"
@@ -20,11 +21,11 @@ export MISE_YES=1
 # npm: needs node). The second pass picks up whatever the first one could not.
 mise install || {
     warn "first pass incomplete — retrying"
-    mise install || warn "some tools failed; see 'mise ls --missing' and re-run: ./install.sh tools"
+    mise install || stage_incomplete "some mise tools failed — see 'mise ls --missing' (set GITHUB_TOKEN if it's a rate limit)"
 }
 if [[ ${RENEW:-0} == 1 ]]; then
     log "Renew: upgrading every mise tool to its newest allowed version"
-    mise upgrade --yes || warn "mise upgrade had failures — see above"
+    mise upgrade --yes || stage_incomplete "mise upgrade had failures — see above"
 fi
 mise reshim
 ok "$(mise ls --global --current 2>/dev/null | wc -l) global tools active"
@@ -41,10 +42,10 @@ fi
 if have fish; then
     log "Fisher plugins (~/.config/fish/fish_plugins)"
     if fish -c 'functions -q fisher' 2>/dev/null; then
-        fish -c 'fisher update' >/dev/null || warn "fisher update failed (GitHub rate limit?) — retry later"
+        fish -c 'fisher update' >/dev/null || stage_incomplete "fisher update failed (GitHub rate limit?)"
     else
         fish -c 'curl -fsSL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source; and fisher update' >/dev/null ||
-            warn "fisher bootstrap failed — retry: ./install.sh tools"
+            stage_incomplete "fisher bootstrap failed (no prompt theme/plugins yet)"
     fi
     ok "$(fish -c 'fisher list' 2>/dev/null | wc -l) plugins"
 fi

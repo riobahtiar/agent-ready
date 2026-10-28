@@ -26,13 +26,21 @@ password, clones the repo to `/home/rio/.dotfiles` and creates `config.env`.
 Repo not on GitHub yet? `scp -r dotfiles-cloud root@<vps-ip>:/root/` and run
 `bash /root/dotfiles-cloud/bootstrap.sh --user rio`.
 
+It strips options such as cloud images' `command="Please login as ubuntu…"` from
+the copied keys, so the key really logs you in as `rio`. `--install` refuses
+to continue until `rio` has a password (otherwise nobody could `sudo` once
+root login is off).
+
 **Keep this root session open** until step 3 has passed.
 
 ## 2. Install (as rio, from a new terminal)
 
+Log in **with your SSH key** as `rio` first: the hardening step turns password
+login off only after it has seen a key login by `rio` (so it can't lock you out).
+
 ```bash
 ssh rio@<vps-ip>
-~/.dotfiles/install.sh
+~/.dotfiles/setup-server.sh
 ```
 
 The first run asks your settings (name, email, profile, which agents, Hermes,
@@ -50,7 +58,9 @@ Non-interactive alternative: edit `config.env` yourself, then
 ## 3. Check you can still log in
 
 In another terminal: `ssh rio@<vps-ip>` must work. Root login and password
-auth are now off. Then close the root session.
+auth are now off, and fail2ban never bans the IP you installed from (add more in
+`F2B_IGNORE_IPS`). If the install said "SSH password login still on", log in
+once with your key and run `./install.sh --changed`. Then close the root session.
 
 ## 4. Log out and back in
 

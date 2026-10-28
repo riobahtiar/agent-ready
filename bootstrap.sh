@@ -81,10 +81,23 @@ TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 if [[ -s /root/.ssh/authorized_keys ]]; then
     install -d -m 700 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.ssh"
     touch "$TARGET_HOME/.ssh/authorized_keys"
+    # Copy the keys WITHOUT their options: cloud images often put
+    # command="echo Please login as ubuntu…;exit 142" on root's key, which
+    # would make the copy useless and, after hardening, lock the user out.
     while IFS= read -r key; do
-        [[ -z $key || $key == \#* ]] && continue
+        [[ -z $key ]] && continue
         grep -qxF "$key" "$TARGET_HOME/.ssh/authorized_keys" || echo "$key" >>"$TARGET_HOME/.ssh/authorized_keys"
-    done </root/.ssh/authorized_keys
+    done < <(cat /root/.ssh/authorized_keys /root/.ssh/authorized_keys2 2>/dev/null | awk '
+        /^[[:space:]]*(#|$)/ { next }
+        {
+            for (i = 1; i <= NF; i++)
+                if ($i ~ /^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9-]+|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)$/) {
+                    out = $i
+                    for (j = i + 1; j <= NF; j++) out = out " " $j
+                    print out
+                    next
+                }
+        }')
     chown "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.ssh/authorized_keys"
     chmod 600 "$TARGET_HOME/.ssh/authorized_keys"
     say "Copied root's SSH keys to $TARGET_USER"
@@ -107,6 +120,12 @@ if [[ -d $DOTFILES_DIR/.git ]]; then
 elif [[ -f "$(dirname "$(readlink -f "$0")")/install.sh" && $(dirname "$(readlink -f "$0")") != "$DOTFILES_DIR" ]]; then
     say "Copying local repo to $DOTFILES_DIR"
     cp -a "$(dirname "$(readlink -f "$0")")" "$DOTFILES_DIR"
+    # A copy from a laptop carries that machine's run state and profile.
+    rm -rf "$DOTFILES_DIR/.state"
+    if [[ -f $DOTFILES_DIR/config.env ]] && grep -qE "^PROFILE=['\"]?(desktop|workstation)" "$DOTFILES_DIR/config.env"; then
+        sed -i "s/^PROFILE=.*/PROFILE=/" "$DOTFILES_DIR/config.env"
+        echo "note: the copied config.env said PROFILE=desktop — cleared it (this is a server)" >&2
+    fi
     chown -R "$TARGET_USER:$TARGET_USER" "$DOTFILES_DIR"
 else
     say "Cloning $REPO_URL"
@@ -121,7 +140,18 @@ if [[ ! -f $DOTFILES_DIR/config.env ]]; then
 fi
 
 if ((RUN_INSTALL)); then
-    exec "$DOTFILES_DIR/install.sh"
+    # Without a sudo password, hardening (root login off) would leave nobody
+    # able to become root. And `curl | bash` has the pipe on stdin: hand
+    # install.sh the terminal so its wizard can run.
+    if ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
+        echo "not running install.sh: $TARGET_USER has no password yet (sudo would be impossible after hardening)." >&2
+        echo "Set one (passwd $TARGET_USER), then: ssh $TARGET_USER@<host> and run ~/.dotfiles/setup-server.sh" >&2
+        exit 1
+    fi
+    if { : </dev/tty; } 2>/dev/null; then
+        exec "$DOTFILES_DIR/setup-server.sh" </dev/tty
+    fi
+    exec "$DOTFILES_DIR/setup-server.sh"
 fi
 
 cat <<EOF

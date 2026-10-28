@@ -3,6 +3,7 @@
 # profile: dashboard + nginx + Telegram gateway). On a desktop, `agents
 # install hermes` gives you just the CLI.
 agent_define hermes \
+    env="ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY" \
     title="Hermes Agent (Nous)" \
     wrapper=b-hermes \
     herdr=hermes \
@@ -11,7 +12,9 @@ agent_define hermes \
     config="~/.hermes" \
     managed="stage:hermes"
 
-hermes_install() { _vendor_script https://hermes-agent.nousresearch.com/install.sh; }
+# --non-interactive: the installer otherwise opens /dev/tty itself and runs
+# `hermes setup` + `gateway install` mid-provisioning (that's hermes-up's job).
+hermes_install() { _vendor_script https://hermes-agent.nousresearch.com/install.sh bash --non-interactive; }
 hermes_update() { hermes update; }
 hermes_uninstall() {
     if [[ $OS_KIND == linux ]] && systemctl cat hermes-dashboard >/dev/null 2>&1; then

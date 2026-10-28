@@ -16,7 +16,8 @@ stage, because config.env is an input to all of them.
 | `HOSTNAME_FQDN` | keep | 10 |
 | `LOGIN_SHELL` | fish | 05 |
 | `SWAP_SIZE_GB`, `ZRAM` | 4, true | 10 (server) |
-| `SSH_HARDEN`, `SSH_DISABLE_ROOT`, `OPEN_MOSH` | true, true, false | 20 (server) |
+| `SSH_HARDEN`, `SSH_DISABLE_ROOT`, `OPEN_MOSH` | true, true, false | 20 (server); `SSH_HARDEN=force` skips the "key login seen" check |
+| `F2B_IGNORE_IPS` | — | 20: never banned (plus loopback, Tailscale, the installing IP) |
 | `TAILSCALE`, `TAILSCALE_SSH`, `TAILSCALE_AUTHKEY` | false, false, — | 75 |
 | `TUNNEL_DEFAULT` | auto | `tunnel` |
 | `DOCKER` | true | 30 |
@@ -32,6 +33,7 @@ stage, because config.env is an input to all of them.
 | `HERMES`, `HERMES_DOMAIN`, `HERMES_DASHBOARD_USER`, `HERMES_DASHBOARD_PORT` | true, h.ciptalogi.com, rio, 9119 | 80 |
 | `HERMES_DASHBOARD_PASSWORD` | prompted | 80 (only the scrypt hash is stored) |
 | `HERMES_ALLOW_IPS` | — | 80: nginx allowlist |
+| `HERMES_CLOUDFLARE_ONLY` | false | 80: accept only Cloudflare's IP ranges (use with Cloudflare Access) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` | — | 80 → `~/.hermes/.env`, `notify` |
 
 Environment-only knobs: `HERMES_RESET_PASSWORD=1 ./install.sh hermes`,

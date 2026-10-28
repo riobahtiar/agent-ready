@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # OpenCode (sst) — vendor installer into ~/.opencode/bin. https://opencode.ai/docs
 agent_define opencode \
+    env="ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY GEMINI_API_KEY" \
     title="OpenCode" \
     wrapper=b-opencode \
     herdr=opencode \

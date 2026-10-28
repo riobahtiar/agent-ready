@@ -12,7 +12,8 @@ hermes="$(command -v hermes)" || die "hermes not on PATH — run: ./install.sh h
 env_file="$HOME/.hermes/.env"
 
 if [[ ${1:-} == status ]]; then
-    sudo "$hermes" gateway status --system || true
+    # (systemctl, not `sudo hermes`: that binary lives in your writable home)
+    systemctl status hermes-gateway --no-pager --lines 5 || true
     systemctl status hermes-dashboard --no-pager --lines 5 || true
     exit 0
 fi

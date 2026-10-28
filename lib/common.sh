@@ -5,10 +5,25 @@
 [[ -n ${__CLOUD_COMMON_LOADED:-} ]] && return 0
 __CLOUD_COMMON_LOADED=1
 
+# bash ≥ 4 for every command, also when /bin/bash (3.2) comes first on macOS's
+# PATH: re-exec the calling script with Homebrew's bash. (Plain 3.2 syntax up
+# to here; "$0"/"$@" are the sourcing script's.)
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    for __b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        [ -x "$__b" ] && exec "$__b" "$0" "$@"
+    done
+    echo "needs bash 4+ (macOS: brew install bash)" >&2
+    exit 1
+fi
+
 DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
 export DOTFILES_DIR
 # shellcheck source=lib/os.sh
 source "$DOTFILES_DIR/lib/os.sh"
+# Flutter publishes no linux-arm64 SDK: don't let mise fail on it forever.
+if [[ $OS_KIND == linux && $(uname -m) == aarch64 && ${MISE_DISABLE_TOOLS:-} != *flutter* ]]; then
+    export MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}flutter"
+fi
 
 # ─── Output ───
 if [[ -t 2 ]]; then
@@ -65,11 +80,12 @@ confirm() {
 # missing key never breaks a stage.
 load_config() {
     local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    # Not `set -a`: config.env holds tokens (Telegram, Tailscale, GitHub), and
+    # exporting them would hand them to every child: vendor installers, npm
+    # postinstalls, sandboxed commands. Only the keys below are exported.
     if [[ -f $file ]]; then
-        set -a
         # shellcheck disable=SC1090
         source "$file"
-        set +a
     fi
 
     if [[ -z ${TARGET_USER:-} ]]; then
@@ -85,6 +101,15 @@ load_config() {
         TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
     fi
     : "${TARGET_HOME:=/home/$TARGET_USER}"
+
+    # As root (sudo), ~ and $HOME in config.env must mean the user's home.
+    if is_root && [[ -f $file && $TARGET_HOME != "$HOME" ]]; then
+        local real_home=$HOME
+        HOME=$TARGET_HOME
+        # shellcheck disable=SC1090
+        source "$file"
+        HOME=$real_home
+    fi
 
     : "${PROFILE:=$(os_default_profile)}"
     [[ $PROFILE == workstation ]] && PROFILE=desktop # old name
@@ -119,6 +144,8 @@ load_config() {
     : "${HERMES_DASHBOARD_USER:=$TARGET_USER}"
     : "${HERMES_DASHBOARD_PORT:=9119}"
     : "${HERMES_ALLOW_IPS:=}"
+    : "${HERMES_CLOUDFLARE_ONLY:=false}"
+    : "${F2B_IGNORE_IPS:=}"
     # A laptop is asleep at 04:00 and would run it on wake, mid-work.
     if [[ -z ${CLEANUP_TIMER:-} ]]; then
         CLEANUP_TIMER=false
@@ -159,7 +186,8 @@ run_as_user() {
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 
 apt_install() {
-    as_root apt-get install -y --no-install-recommends "$@"
+    as_root apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+        install -y --no-install-recommends "$@"
 }
 
 # apt_install_available <pkg...> — install what exists in this release, warn on the rest.
@@ -209,6 +237,13 @@ install_file() {
     as_root install -m "$mode" "$src" "$dst"
 }
 
+# install_changed <src> <dst> [mode] — install only when different; true when
+# it changed something (so callers restart services only then).
+install_changed() {
+    as_root cmp -s "$1" "$2" 2>/dev/null && return 1
+    install_file "$@"
+}
+
 # render <template> KEY=VALUE... — replace __KEY__ placeholders, print result.
 # bash 5.2+ would expand `&` in the replacement to the match; values are literal.
 shopt -u patsub_replacement 2>/dev/null || true
@@ -224,20 +259,44 @@ render() {
     printf '%s\n' "$content"
 }
 
+# safe_target <file> — refuse to write through a symlink or into a non-file:
+# a user-owned path written by root must never redirect to /etc/shadow & co.
+safe_target() {
+    if [[ -L $1 ]] || [[ -e $1 && ! -f $1 ]]; then
+        die "refusing to write $1: it is a symlink or not a regular file"
+    fi
+}
+
+# atomic_replace <file> <tmp> — move tmp over file (same directory, so mv
+# replaces the name, never follows a link), keeping mode 600.
+atomic_replace() {
+    chmod 600 "$2"
+    mv -f "$2" "$1"
+}
+
 # env_set <file> <KEY> <value> — upsert KEY='value' (dotenv + systemd compatible).
+# Run it as the file's owner (see stage 80): written atomically, never through a symlink.
 env_set() {
     local file=$1 key=$2 value=$3 tmp
     [[ $value == *"'"* ]] && die "env_set: single quotes are not supported in $key"
-    touch "$file"
-    chmod 600 "$file"
-    tmp="$(mktemp)"
+    safe_target "$file"
+    tmp="$(mktemp "$(dirname "$file")/.env_set.XXXXXX")"
+    [[ -f $file ]] || : >"$file.missing" # (awk needs an input file)
     K="$key" L="$key='$value'" awk '
         index($0, ENVIRON["K"] "=") == 1 { print ENVIRON["L"]; done = 1; next }
         { print }
         END { if (!done) print ENVIRON["L"] }
-    ' "$file" >"$tmp"
-    cat "$tmp" >"$file"
-    rm -f "$tmp"
+    ' "$([[ -f $file ]] && echo "$file" || echo "$file.missing")" >"$tmp"
+    rm -f "$file.missing"
+    atomic_replace "$file" "$tmp"
+}
+
+# stage_incomplete <reason> — inside a stage: finish, but don't record the stage
+# as applied, so `install.sh --changed` retries it.
+stage_incomplete() {
+    warn "$*"
+    [[ -n ${STAGE_INCOMPLETE_FILE:-} ]] && printf '%s\n' "$*" >>"$STAGE_INCOMPLETE_FILE"
+    return 0
 }
 
 # env_get <file> <KEY> — print the unquoted value, empty if missing.

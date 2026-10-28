@@ -53,13 +53,25 @@ cmd_check() {
     claude_sb="$(jq -r '.sandbox.enabled // "unset"' "$HOME/.claude/settings.json" 2>/dev/null || echo unset)"
     [[ $claude_sb == true ]] && printf '  %s Claude Code sandbox on (~/.claude/settings.json)\n' "$yes" ||
         printf '  %s Claude Code sandbox %s — /sandbox in a session, or AGENT_SANDBOX=true + ./install.sh agents\n' "$no" "$claude_sb"
-    have codex && printf '  %s Codex: built-in Landlock/seccomp (Linux) / Seatbelt sandbox — keep --sandbox workspace-write\n' "$yes"
+    if have codex; then printf '  %s Codex: built-in Landlock/seccomp (Linux) / Seatbelt sandbox — keep --sandbox workspace-write\n' "$yes"; fi
+}
+
+# Only these variables cross into the sandbox: the shells export every key in
+# ~/.config/secrets.env, and a sandboxed command must not inherit them.
+SAFE_ENV=(PATH HOME USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL TZ TMPDIR EDITOR PAGER NO_COLOR DO_NOT_TRACK)
+clean_env() {
+    local v
+    local -a keep=()
+    for v in "${SAFE_ENV[@]}" "$@"; do [[ -n ${!v:-} ]] && keep+=("$v=${!v}"); done
+    printf '%s\0' "${keep[@]}"
 }
 
 cmd_run() {
     (($#)) || usage 2
     need_srt
-    exec srt --settings "$HOME/.srt-settings.json" -- "$@"
+    local -a env=()
+    mapfile -d '' -t env < <(clean_env)
+    exec env -i "${env[@]}" srt --settings "$HOME/.srt-settings.json" -- "$@"
 }
 
 cmd_agent() {
@@ -74,8 +86,21 @@ cmd_agent() {
     shift
     agent_known "$name" || die "unknown agent '$name'"
     need_srt
-    warn "agent sandboxed: writes only in $(pwd) + caches; network only to ~/.srt-settings.json allowedDomains"
-    exec srt --settings "$HOME/.srt-settings.json" -- "$(agent_bin "$name")" "$@"
+    have jq || die "jq is needed to build the agent's policy"
+    # The agent may use its OWN config dir (sign-in, sessions) and its own API
+    # key; every other secret stays hidden and unset.
+    local own policy
+    own="$(agent_get "$name" config)"
+    policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-$name.json"
+    mkdir -p "$(dirname "$policy")"
+    jq --arg own "$own" '($own | split(" ") | map(select(length > 0))) as $o
+        | .filesystem.denyRead |= map(select(. as $d | ($o | any(. as $x | $d == $x or ($d | startswith($x + "/")))) | not))
+        | .filesystem.allowWrite += $o' "$HOME/.srt-settings.json" >"$policy"
+    local -a env=()
+    # shellcheck disable=SC2046
+    mapfile -d '' -t env < <(clean_env $(agent_get "$name" env))
+    warn "agent sandboxed: writes only in $(pwd), caches and its own config; network only to the allowlist"
+    exec env -i "${env[@]}" srt --settings "$policy" -- "$(agent_bin "$name")" "$@"
 }
 
 cmd_box() {

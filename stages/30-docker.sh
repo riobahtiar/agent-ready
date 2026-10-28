@@ -52,8 +52,18 @@ if ! have docker; then
     debian) install_debian ;;
     arch) pkg_install docker docker-compose docker-buildx ;;
     fedora) pkg_install moby-engine docker-compose ;;
-    *) die "no Docker recipe for $OS_PRETTY — install Docker yourself, then re-run for daemon.json" ;;
+    *)
+        warn "no Docker recipe for $OS_PRETTY — install Docker yourself, then: ./install.sh docker"
+        exit 0
+        ;;
     esac
+fi
+
+# A `docker` command without the engine's systemd unit is Docker Desktop for
+# Linux or podman-docker: their daemon isn't ours to configure.
+if ! systemctl cat docker.service >/dev/null 2>&1; then
+    step "docker here isn't the Docker Engine service (Docker Desktop / podman?) — leaving it alone"
+    exit 0
 fi
 
 if is_true "${GVISOR:-false}" && ! have runsc; then
@@ -84,8 +94,20 @@ if ! as_root cmp -s "$desired" "$daemon_json" 2>/dev/null; then
     if dockerd --validate --config-file "$desired" >/dev/null 2>&1; then
         [[ -f $daemon_json ]] && as_root cp "$daemon_json" "$daemon_json.bak"
         install_file "$desired" "$daemon_json"
-        as_root systemctl restart docker
-        ok "installed (log rotation, 127.0.0.1 default bind, live-restore$(have runsc && echo ', runsc runtime'))"
+        # The first restart stops running containers (live-restore isn't on
+        # yet), and "ip": 127.0.0.1 re-binds published ports to loopback when
+        # they come back. Never do that to a busy box without asking.
+        running="$( (as_root docker ps -q 2>/dev/null || true) | wc -l | xargs)" # daemon may be down
+        if ((running > 0)) && ! { has_tty && ASSUME_YES=0 confirm "  Restart Docker now? $running running container(s) will stop and come back (if they have a restart policy) with ports re-bound to 127.0.0.1 [y/N] "; }; then
+            stage_incomplete "daemon.json installed, but Docker NOT restarted ($running containers running) — restart it when convenient: sudo systemctl restart docker"
+        elif as_root systemctl restart docker; then
+            ok "installed (log rotation, 127.0.0.1 default bind, live-restore$(have runsc && echo ', runsc runtime'))"
+        else
+            warn "docker failed to restart with the new daemon.json — restoring the previous one"
+            if [[ -f $daemon_json.bak ]]; then as_root cp "$daemon_json.bak" "$daemon_json"; else as_root rm -f "$daemon_json"; fi
+            as_root systemctl restart docker || warn "docker still doesn't start: journalctl -u docker -n 50"
+            stage_incomplete "daemon.json rejected at runtime"
+        fi
     else
         warn "dockerd rejected the daemon config — keeping the current one"
         dockerd --validate --config-file "$desired" || true

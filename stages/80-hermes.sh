@@ -2,6 +2,7 @@
 # stage-user: root
 # stage-os: debian+systemd+nowsl
 # stage-profile: server
+# stage-inputs: nginx/templates systemd scripts agents.d/hermes.sh
 # stage-desc: Hermes agent + web dashboard behind nginx/TLS at HERMES_DOMAIN, Telegram credentials
 set -Eeuo pipefail
 source "$DOTFILES_DIR/lib/common.sh"
@@ -17,6 +18,12 @@ if [[ -z $HERMES_DOMAIN ]]; then
     warn "HERMES_DOMAIN is empty in config.env — skipping Hermes (set it, then: ./install.sh hermes)"
     exit 0
 fi
+valid_domain() { [[ $1 =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]]; }
+valid_cidr() { [[ $1 =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]]; }
+# Both end up in the nginx vhost: no value may smuggle in directives.
+valid_domain "$HERMES_DOMAIN" || die "HERMES_DOMAIN is not a domain: '$HERMES_DOMAIN'"
+for ip in ${HERMES_ALLOW_IPS:-}; do valid_cidr "$ip" || die "HERMES_ALLOW_IPS: '$ip' is not an IP or CIDR"; done
+
 if ! have nginx; then
     warn "nginx is missing — run ./install.sh web, then ./install.sh hermes"
     exit 0
@@ -27,10 +34,14 @@ port="$HERMES_DASHBOARD_PORT"
 public_url="https://$HERMES_DOMAIN"
 
 log "Hermes agent"
-run_as_user bash -c "source '$DOTFILES_DIR/lib/common.sh'; source '$DOTFILES_DIR/lib/agents.sh'; agent_install hermes"
+run_as_user bash -c "source '$DOTFILES_DIR/lib/common.sh'; source '$DOTFILES_DIR/lib/agents.sh'; agent_install hermes" ||
+    warn "the Hermes installer reported a failure"
 hermes_bin="$(run_as_user bash -lc 'command -v hermes' || true)"
 [[ -x $hermes_bin ]] || hermes_bin="$TARGET_HOME/.local/bin/hermes"
-[[ -x $hermes_bin ]] || die "hermes binary not found after install — check the installer output above"
+if [[ ! -x $hermes_bin ]]; then
+    stage_incomplete "hermes binary not found after install — check the output above, then: ./install.sh hermes"
+    exit 0
+fi
 ok "$hermes_bin ($(run_as_user "$hermes_bin" --version 2>/dev/null | head -1))"
 if [[ -x $TARGET_HOME/.local/bin/herdr ]]; then
     run_as_user "$TARGET_HOME/.local/bin/herdr" integration install hermes >/dev/null 2>&1 &&
@@ -38,12 +49,13 @@ if [[ -x $TARGET_HOME/.local/bin/herdr ]]; then
 fi
 
 # Values in ~/.hermes/.env override config.yaml and are what the systemd unit
-# loads. Written as root (secrets never hit a command line), then handed back.
+# loads. Read and written AS THE USER: the directory is the user's, and root
+# writing there would follow a planted symlink (e.g. .env → /etc/shadow).
+# Values travel on stdin, never on a command line.
 set_env() {
-    env_set "$hermes_env" "$1" "$2"
-    chown "$TARGET_USER:" "$hermes_env"
+    printf '%s' "$2" | run_as_user bash -c 'source "$DOTFILES_DIR/lib/common.sh"; env_set "$1" "$2" "$(cat)"' _ "$hermes_env" "$1"
 }
-get_env() { env_get "$hermes_env" "$1"; }
+get_env() { run_as_user bash -c 'source "$DOTFILES_DIR/lib/common.sh"; env_get "$1" "$2"' _ "$hermes_env" "$1"; }
 run_as_user install -d -m 700 "$TARGET_HOME/.hermes"
 
 log "Telegram"
@@ -100,25 +112,44 @@ for _ in {1..20}; do
     curl -fsS "http://127.0.0.1:$port/api/status" >/dev/null 2>&1 && break
     sleep 1
 done
+auth_required=unknown
 if status="$(curl -fsS "http://127.0.0.1:$port/api/status" 2>/dev/null)"; then
-    ok "dashboard up on 127.0.0.1:$port (auth_required=$(jq -r '.auth_required | tostring' <<<"$status"))"
+    auth_required="$(jq -r '.auth_required | tostring' <<<"$status")"
+    ok "dashboard up on 127.0.0.1:$port (auth_required=$auth_required)"
 else
     warn "dashboard not answering yet — journalctl -u hermes-dashboard -n 50"
 fi
 
 log "nginx + TLS for $HERMES_DOMAIN"
 allow=''
-if [[ -n $HERMES_ALLOW_IPS ]]; then
-    for ip in $HERMES_ALLOW_IPS; do allow+="    allow $ip;"$'\n'; done
-    allow+="    deny all;"$'\n'
+if is_true "${HERMES_CLOUDFLARE_ONLY:-false}"; then
+    # Behind Cloudflare (Access): only Cloudflare may connect, or anyone who
+    # knows the VPS IP walks around Access with `curl --resolve`.
+    cf_ips="$(
+        curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4
+        echo
+        curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6
+    )" || cf_ips=''
+    for ip in $cf_ips; do valid_cidr "$ip" && allow+="    allow $ip;"$'\n'; done
+    if [[ -z $allow ]]; then
+        stage_incomplete "couldn't fetch Cloudflare's IP ranges — not publishing the dashboard (fail closed)"
+        exit 0
+    fi
 fi
-# Hermes is optional: a missing certificate (DNS not propagated yet) must not
-# stop the remaining stages. The dashboard still runs on 127.0.0.1.
-if cert_issue "$HERMES_DOMAIN"; then
+for ip in ${HERMES_ALLOW_IPS:-}; do allow+="    allow $ip;"$'\n'; done
+[[ -n $allow ]] && allow+="    deny all;"$'\n'
+
+# Never put a dashboard on the internet unless Hermes itself demands a login:
+# it's a web terminal on this machine.
+if [[ $auth_required != true ]]; then
+    stage_incomplete "dashboard auth_required=$auth_required — NOT publishing $HERMES_DOMAIN (fix auth, then: ./install.sh hermes)"
+elif cert_issue "$HERMES_DOMAIN"; then
+    # Hermes is optional: a missing certificate (DNS not propagated yet) must
+    # not stop the remaining stages. The dashboard still runs on 127.0.0.1.
     site_write "$HERMES_DOMAIN" hermes PORT="$port" ALLOW="$allow" ||
-        warn "nginx rejected the Hermes vhost — previous config kept"
+        stage_incomplete "nginx rejected the Hermes vhost — previous config kept"
 else
-    warn "no public dashboard yet — once DNS for $HERMES_DOMAIN points here: ./install.sh hermes"
+    stage_incomplete "no public dashboard yet — once DNS for $HERMES_DOMAIN points here: ./install.sh hermes"
 fi
 
 cat >&2 <<EOF

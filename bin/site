@@ -26,6 +26,8 @@ usage() {
     exit "${1:-0}"
 }
 
+# The path lands in `root …;` of the vhost: no spaces, quotes, ; { } or newlines.
+valid_root() { [[ $1 =~ ^/[A-Za-z0-9._@+/-]+$ ]] || die "unsupported characters in path (letters, digits, . _ @ + - / only): $1"; }
 valid_domain() { [[ $1 =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] || die "invalid domain: $1"; }
 
 # site_domains — domains of the vhosts this repo manages.
@@ -147,6 +149,7 @@ cmd_add() {
     static)
         arg=${arg:-$WWW_DIR/$domain}
         arg="$(readlink -m "$arg")"
+        valid_root "$arg"
         if [[ ! -d $arg ]]; then
             install -d -m 2775 "$arg"
             printf '<!doctype html><title>%s</title><h1>%s</h1>\n' "$domain" "$domain" >"$arg/index.html"
@@ -159,6 +162,7 @@ cmd_add() {
     php)
         [[ -n $arg ]] || die "--php needs the document root (e.g. ~/projects/app/public)"
         arg="$(readlink -m "$arg")"
+        valid_root "$arg"
         [[ -d $arg ]] || die "$arg does not exist"
         vars=(ROOT="$arg" PHP_SOCK="$(php_fpm_socket)")
         ;;

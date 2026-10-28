@@ -182,7 +182,8 @@ menu_docs() {
 
 trap 'echo >&2' INT
 while :; do
-    choice="$(ui_choose "$(hostname -s) · $(uptime -p | sed 's/^up //') · $(df -h / | awk 'NR==2 {print $4}') free" \
+    up="$(uptime -p 2>/dev/null | sed 's/^up //' || true)"
+    choice="$(ui_choose "$(hostname -s)${up:+ · $up} · $(df -h / | awk 'NR==2 {print $4}') free" \
         "doctor|Health check (doctor)" \
         "update|Update agents and tools (update-all)" \
         "cleanup|Clean up disk · worktrees · processes (cleanup)" \

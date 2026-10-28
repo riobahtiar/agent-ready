@@ -52,7 +52,12 @@ cleanup --auto              # what the weekly timer runs: safe subset, report-on
 ```
 
 Targets: `caches docker worktrees agents projects system procs`. It never
-deletes dirty worktrees, unpushed commits or named Docker volumes.
+deletes: dirty worktrees, worktrees holding nested checkouts or ignored files
+that aren't build output (`.env`, keys, agent memory), branches without proof
+their work was merged (on a remote, squash-merged, or a merged GitHub PR),
+named Docker volumes, stopped containers (listed, removed only if you confirm),
+agent session history. Killing processes and removing orphaned worktrees or
+Arch orphan packages always need you at a terminal; `-y` doesn't cover them.
 
 ## site — host a project (server profile)
 
@@ -72,8 +77,8 @@ Details: [05 Hosting sites](05-hosting-sites.md).
 
 ```bash
 tunnel                       # menu: pick the port (from what's listening), then the provider
-tunnel 5173                  # TUNNEL_DEFAULT, else the first ready provider
-tunnel 5173 cloudflare       # tailscale · funnel · cloudflare · cfnamed · zrok · pinggy · ssh · nginx
+tunnel 5173                  # TUNNEL_DEFAULT, else the first ready PRIVATE provider (tailscale, else ssh)
+tunnel 5173 cloudflare       # public providers ask first; -y to skip (scripts)
 tunnel 3000 cfnamed dev.ciptalogi.com
 tunnel ls · tunnel stop <port|all> · tunnel logs <port> · tunnel providers
 ```
@@ -141,7 +146,11 @@ hermes-up status
 ./install.sh --list          # stages with OS/profile rules
 ```
 
-All take `-y`. Once setup has run, `install.sh` without a TTY refuses to
+All take `-y` (except switching profile, which always asks at a terminal).
+Modes don't combine: give stage names *or* one of `--all/--changed/--renew`.
+A stage that finishes with work left (no key login seen yet, a tool that
+failed to install, DNS not ready) is reported "incomplete" and `--changed`
+retries it. Once setup has run, `install.sh` without a TTY refuses to
 re-run everything silently; say which mode you mean.
 
 ## Fish helpers

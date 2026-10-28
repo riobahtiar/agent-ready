@@ -25,11 +25,24 @@ while IFS= read -r -d '' src; do
 done < <(find "$DOTFILES_DIR/home" -type f -print0 | sort -z)
 
 # Links whose source was deleted from home/ (a retired tool's config) go too.
+# Only the directories home/ links into are scanned: walking all of $HOME
+# trips macOS privacy prompts (Desktop, Documents, iCloud).
 while IFS= read -r -d '' link; do
     if [[ $(readlink "$link") == "$DOTFILES_DIR/home/"* && ! -e $link ]]; then
         rm -f "$link" && step "removed stale link ${link/#$HOME/\~}"
     fi
-done < <(find "$HOME" -maxdepth 4 -type l -print0 2>/dev/null)
+done < <(
+    {
+        echo "$HOME"
+        find "$DOTFILES_DIR/home" -mindepth 1 -type d | sed "s|^$DOTFILES_DIR/home|$HOME|"
+    } |
+        while IFS= read -r d; do [[ -d $d ]] && find "$d" -maxdepth 1 -type l -print0 2>/dev/null; done
+)
+
+# PROJECTS_DIR, resolved once by bash (as install.sh reads config.env), for the
+# shells: they read this one line instead of executing config.env at every login.
+mkdir -p "$HOME/.config/dotfiles"
+printf '%s\n' "$PROJECTS_DIR" >"$HOME/.config/dotfiles/projects_dir"
 
 log "git identity"
 git_local="$HOME/.config/git/local"
@@ -56,12 +69,23 @@ have zsh && add_line "$HOME/.zshenv" "$profile_line"
 # Ubuntu's ~/.bashrc returns early for non-interactive shells, so this goes
 # at the top to cover `bash -c` too.
 bashrc_line='[ -r "$HOME/.dotfiles/shell/bashrc.sh" ] && . "$HOME/.dotfiles/shell/bashrc.sh"'
-if ! grep -qxF "$bashrc_line" "$HOME/.bashrc" 2>/dev/null; then
+if [[ -L $HOME/.bashrc ]]; then
+    # Managed elsewhere (another dotfiles repo): don't turn the link into a file.
+    grep -qxF "$bashrc_line" "$HOME/.bashrc" 2>/dev/null ||
+        warn "~/.bashrc is a symlink — add this line at its top yourself: $bashrc_line"
+elif [[ -e $HOME/.bashrc && ! -r $HOME/.bashrc ]]; then
+    die "~/.bashrc exists but can't be read — fix its permissions, then re-run (not rewriting it)"
+elif ! grep -qxF "$bashrc_line" "$HOME/.bashrc" 2>/dev/null; then
     {
         printf '# ~/.dotfiles (kept above the interactive guard)\n%s\n\n' "$bashrc_line"
         # A fresh account (macOS uses zsh) may have no ~/.bashrc yet.
-        cat "$HOME/.bashrc" 2>/dev/null || true
-    } >"$HOME/.bashrc.new"
+        if [[ -e $HOME/.bashrc ]]; then cat "$HOME/.bashrc"; fi
+    } >"$HOME/.bashrc.new" || die "couldn't write ~/.bashrc.new (disk full?) — ~/.bashrc left as it was"
+    # Never replace it with something shorter than what was there plus our lines.
+    if [[ -e $HOME/.bashrc ]] && (($(wc -c <"$HOME/.bashrc.new") <= $(wc -c <"$HOME/.bashrc"))); then
+        rm -f "$HOME/.bashrc.new"
+        die "the new ~/.bashrc came out shorter than the old one — not replacing it"
+    fi
     mv "$HOME/.bashrc.new" "$HOME/.bashrc"
 fi
 ok "~/.profile and ~/.bashrc source ~/.dotfiles/shell/"

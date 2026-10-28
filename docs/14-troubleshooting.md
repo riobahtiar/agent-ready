@@ -4,6 +4,10 @@ Start with `doctor` and `./install.sh --status`: most problems show up in one of
 
 | Symptom | Fix |
 |---|---|
+| "SSH password login still on" | Hardening waits for proof that your key works: log in as the user with your key, then `./install.sh --changed` (or `SSH_HARDEN=force`) |
+| A stage says "incomplete" | It finished but something was left (a tool, DNS, a login); fix what it printed, `./install.sh --changed` retries it |
+| `mise: config not trusted` in a project | Expected for cloned repos: read its `mise.toml`, then `mise trust` |
+| Docker "NOT restarted" | Containers were running: `sudo systemctl restart docker` when convenient |
 | A stage failed mid-install | Fix what it printed, then `./install.sh --changed`. Stages that completed are skipped |
 | `setup already ran here` | It's the guard: pick `--changed`, `--all` or `--renew` (or run it in a terminal for the menu) |
 | mise: `API rate limit exceeded` | Set `GITHUB_TOKEN` in config.env, then `./install.sh tools` |

@@ -40,13 +40,20 @@ hermes-up           # Telegram gateway → boot service; restarts the dashboard
 - **Cloudflare Access** (recommended, free). Proxy the DNS record through
   Cloudflare (orange cloud, SSL **Full (strict)**), then Zero Trust → Access →
   Applications → add `h.ciptalogi.com` with an email-OTP or GitHub policy.
-  Nothing changes on the server.
+  **Also set `HERMES_CLOUDFLARE_ONLY=true`** and run `./install.sh hermes`:
+  otherwise anyone who learns the VPS IP reaches the dashboard directly
+  (`curl --resolve h.ciptalogi.com:443:<ip> …`) and skips Access. (Behind the
+  proxy, `HERMES_ALLOW_IPS` only ever sees Cloudflare's addresses.)
 - **IP allowlist**: `HERMES_ALLOW_IPS="203.0.113.7 198.51.100.0/24"` in config.env,
   then `./install.sh hermes`.
 - Tailscale-only access sounds tempting, but pointing the public DNS record at a
   100.x address breaks Let's Encrypt's HTTP check (and renewals). Use one of
   the two above. With Tailscale you can still use the allowlist: add your
   devices' public IPs.
+
+Stage 80 also refuses to publish the vhost unless the dashboard reports
+`auth_required: true`. If Hermes ever starts without auth, the site stays off
+and the stage is reported incomplete.
 
 ## Operate
 

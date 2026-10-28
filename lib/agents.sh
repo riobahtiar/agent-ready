@@ -22,6 +22,8 @@ declare -gA AGENT_META=()
 #   guide    where the agent reads global instructions (gets agents/AGENTS.global.md linked), or -
 #   paths    what uninstall removes (space-separated, ~ allowed)
 #   config   settings/history, removed only by `agents remove <name> --purge`
+#            (also what `sandbox agent <name>` may read and write)
+#   env      API-key variables the agent needs inside `sandbox agent` (others stay unset)
 #   os       where it runs: linux macos (default both)
 #   managed  "stage:<name>" when a stage owns install (hermes)
 agent_define() {
@@ -53,15 +55,17 @@ unset __f
 # _vendor_script <url> [sh|bash] — download to a temp file, then run it.
 # (Downloading first means a dropped connection can't run half a script.)
 # SHELL=bash so installers append PATH lines to ~/.bashrc, not the symlinked fish config.
+# _vendor_script <url> [sh|bash] [installer args…]
 _vendor_script() {
     local url=$1 shell=${2:-bash} tmp
+    shift $(($# < 2 ? $# : 2))
     tmp="$(mktemp)"
     if ! curl -fsSL "$url" -o "$tmp"; then
         rm -f "$tmp"
         return 1
     fi
     local rc=0
-    SHELL=/bin/bash "$shell" "$tmp" </dev/null || rc=$?
+    SHELL=/bin/bash "$shell" "$tmp" "$@" </dev/null || rc=$?
     rm -f "$tmp"
     return $rc
 }
@@ -108,6 +112,19 @@ agent_update() {
 }
 
 # agent_uninstall <name> [--purge] — remove binaries/install dirs; --purge also settings.
+# _removable <path> — a path an agent module may delete: inside $HOME, at
+# least two levels below it, and not a shared location like ~/.config.
+_removable() {
+    local p=$1 protected
+    [[ $p == "$HOME"/?*/?* || $p == "$HOME"/.?* ]] || return 1
+    for protected in "$HOME" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/bin" \
+        "$HOME/.local/state" "$HOME/.cache" "$HOME/.ssh" "$HOME/.gnupg" "$HOME/.docker" "$HOME/.aws" \
+        "$HOME/.kube" "$HOME/.npm" "$HOME/.bun" "$HOME/go" "${PROJECTS_DIR:-$HOME/projects}" "$DOTFILES_DIR"; do
+        [[ ${p%/} == "${protected%/}" ]] && return 1
+    done
+    return 0
+}
+
 agent_uninstall() {
     local name=$1 purge=${2:-} p
     local rc=0
@@ -115,13 +132,30 @@ agent_uninstall() {
     if ((rc == 127)); then
         for p in $(agent_get "$name" paths); do
             p="$(_expand_home "$p")"
-            [[ -e $p || -L $p ]] && rm -rf -- "$p" && step "removed ${p/#$HOME/\~}"
+            [[ -e $p || -L $p ]] || continue
+            if ! _removable "$p"; then
+                warn "not removing ${p/#$HOME/\~}: shared location (fix 'paths' in agents.d/$name.sh)"
+                continue
+            fi
+            rm -rf -- "$p" && step "removed ${p/#$HOME/\~}"
         done
     fi
     if [[ $purge == --purge ]]; then
+        local repos
         for p in $(agent_get "$name" config); do
             p="$(_expand_home "$p")"
-            [[ -e $p || -L $p ]] && rm -rf -- "$p" && step "purged ${p/#$HOME/\~}"
+            [[ -e $p || -L $p ]] || continue
+            if ! _removable "$p"; then
+                warn "not purging ${p/#$HOME/\~}: shared location (fix 'config' in agents.d/$name.sh)"
+                continue
+            fi
+            # Agents keep worktrees (= your code) under their config dirs.
+            repos="$(find "$p" -maxdepth 5 -name .git -print 2>/dev/null | head -3 | sed "s|^$HOME|~|" | tr '\n' ' ')"
+            if [[ -n $repos ]]; then
+                warn "not purging ${p/#$HOME/\~}: it holds git checkouts/worktrees (${repos% }) — move them out first"
+                continue
+            fi
+            rm -rf -- "$p" && step "purged ${p/#$HOME/\~}"
         done
     fi
     hash -r

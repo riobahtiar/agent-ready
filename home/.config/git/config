@@ -27,7 +27,6 @@
 [fetch]
     # Drops deleted remote branches so `cleanup worktrees` can spot finished work.
     prune = true
-    pruneTags = true
 [rebase]
     autoStash = true
     updateRefs = true

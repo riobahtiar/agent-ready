@@ -47,8 +47,11 @@ cleanup procs           # orphaned MCP servers, headless browsers, watchers
 cleanup all --deep      # big reclaim (Go modcache, unused images, old tool versions)
 ```
 
-Never deleted: dirty worktrees, unpushed commits, named Docker volumes, recent
-agent transcripts.
+Never deleted: dirty worktrees, worktrees with nested checkouts or ignored
+secrets, branches without proof of merge, named Docker volumes, stopped
+containers (unless you confirm the list), agent session history. `--auto` (the
+weekly timer) only reports worktrees: no repair, no prune, no removal. Local
+git tags are never pruned by fetches (`fetch.pruneTags` is off).
 
 ## Backups
 

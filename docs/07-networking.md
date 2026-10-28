@@ -39,8 +39,10 @@ modules in `tunnels.d/`, one file each.
 | `nginx` | public, **permanent** | `https://app.ciptalogi.com` | server profile + DNS | It's not a preview any more: use `site add` |
 
 `tunnel <port>` with no provider uses `TUNNEL_DEFAULT` (config.env), or else
-the first ready one in rank order: tailscale → cloudflare → funnel → zrok → pinggy.
-`tunnel providers` shows what each still needs.
+the first ready **private** one: Tailscale Serve, else the SSH forward. Going
+public is never automatic: name the provider, and confirm (or pass `-y` in a
+script). The Hermes dashboard port is refused outright, because nginx publishes it with its
+allowlist. `tunnel providers` shows what each still needs.
 
 ```bash
 tunnel                          # menu

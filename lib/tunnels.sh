@@ -37,11 +37,13 @@ mapfile -t TUNNEL_IDS < <(for id in "${TUNNEL_IDS[@]}"; do echo "$(tunnel_get "$
 
 tunnel_ready() { "${1}_ready" >/dev/null 2>&1; }
 
-# tunnel_auto — first ready provider that gives a URL without extra prompts.
+# tunnel_auto — first ready PRIVATE provider. Going public is never automatic:
+# it has to be named (and confirmed), or set as TUNNEL_DEFAULT.
 tunnel_auto() {
     local id
     for id in "${TUNNEL_IDS[@]}"; do
-        [[ $(tunnel_get "$id" auto) == no ]] && continue
+        [[ $(tunnel_get "$id" reach) == private ]] || continue
+        [[ $(tunnel_get "$id" auto) == no && $id != ssh ]] && continue
         tunnel_ready "$id" && echo "$id" && return 0
     done
     return 1
@@ -56,13 +58,16 @@ tunnel_bg() {
     mkdir -p "$TUNNEL_STATE"
     local log pidf urlf
     log="$(_tunnel_file "$id" "$port" log)" pidf="$(_tunnel_file "$id" "$port" pid)" urlf="$(_tunnel_file "$id" "$port" url)"
-    if [[ -f $pidf ]] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
+    if _tunnel_alive "$id" "$port"; then
         cat "$urlf" 2>/dev/null
         return 0
     fi
     : >"$log"
     nohup "$@" >"$log" 2>&1 </dev/null &
     echo $! >"$pidf"
+    # What we started, so a stale pidfile (reboot, reused PID) never kills
+    # some other process of yours.
+    basename "$1" >"$(_tunnel_file "$id" "$port" cmd)"
     local i url=''
     for ((i = 0; i < 60; i++)); do
         url="$(grep -oE "$regex" "$log" | head -1 || true)"
@@ -80,11 +85,21 @@ tunnel_bg() {
     echo "$url"
 }
 
+# _tunnel_alive <id> <port> — the recorded PID is running AND is the command we started.
+_tunnel_alive() {
+    local pidf cmdf pid want
+    pidf="$(_tunnel_file "$1" "$2" pid)" cmdf="$(_tunnel_file "$1" "$2" cmd)"
+    [[ -f $pidf && -f $cmdf ]] || return 1
+    pid="$(cat "$pidf")" want="$(cat "$cmdf")"
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    ps -p "$pid" -o command= 2>/dev/null | grep -qF -- "$want"
+}
+
 tunnel_kill() {
     local pidf
     pidf="$(_tunnel_file "$1" "$2" pid)"
-    [[ -f $pidf ]] && kill "$(cat "$pidf")" 2>/dev/null || true
-    rm -f "$pidf" "$(_tunnel_file "$1" "$2" url)"
+    if _tunnel_alive "$1" "$2"; then kill "$(cat "$pidf")" 2>/dev/null || true; fi
+    rm -f "$pidf" "$(_tunnel_file "$1" "$2" url)" "$(_tunnel_file "$1" "$2" cmd)"
 }
 
 # tunnel_record <id> <port> <url> — remember a tunnel another daemon owns (tailscale).
@@ -107,8 +122,8 @@ tunnels_active() {
         base="$(basename "$f" .url)"
         id=${base%-*} port=${base##*-}
         pidf="$(_tunnel_file "$id" "$port" pid)"
-        if [[ -f $pidf ]] && ! kill -0 "$(cat "$pidf")" 2>/dev/null; then
-            rm -f "$f" "$pidf"
+        if [[ -f $pidf ]] && ! _tunnel_alive "$id" "$port"; then
+            rm -f "$f" "$pidf" "$(_tunnel_file "$id" "$port" cmd)"
             continue
         fi
         echo "$id $port $(cat "$f")"

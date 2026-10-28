@@ -56,11 +56,14 @@ always pass arguments**; a missing one fails fast instead of prompting.
 - `doctor` checks health: services, memory, disk, public ports, certificates and agents.
 - `cleanup <caches|docker|worktrees|agents|projects|system|procs> --dry-run` shows what it would reclaim. Show the user before running it for real.
 - `site add <domain> --proxy <port>` / `site ls` / `site logs <domain>` manage nginx vhosts and TLS (server only).
-- `tunnel <port> <provider>` shares a dev server (`tunnel providers`, `tunnel ls`, `tunnel stop <port>`). Public providers (`cloudflare`, `pinggy`, `zrok`, `funnel`) expose the port to anyone: ask first.
+- `tunnel <port> <provider>` shares a dev server (`tunnel providers`, `tunnel ls`, `tunnel stop <port>`). Public providers (`cloudflare`, `pinggy`, `zrok`, `funnel`) expose the port to anyone and need `-y` without a terminal: ask the user first, every time.
 - `sandbox run <cmd…>` runs a command with project-only writes, an allowlisted network and secrets hidden. Use it for untrusted installs and scripts.
 - `notify "<message>"` pings the user on Telegram (when a long task finishes or you're blocked).
 - `update-all --check` lists what's outdated. Leave upgrades themselves to the user.
 - `agents` lists the agent CLIs and their versions.
+
+## mise trust
+- Only `~/.dotfiles` is trusted. If mise says a project's config isn't trusted, stop and ask the user to review and `mise trust` it. Never run `mise trust` yourself.
 
 ## Sandboxing
 - Claude Code's sandbox is on (bubblewrap/Seatbelt). If a command fails with

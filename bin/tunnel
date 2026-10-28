@@ -2,7 +2,8 @@
 # tunnel — share a local dev server (127.0.0.1:<port>) through a tunnel.
 #
 #   tunnel                          at a terminal: pick the port, then the provider
-#   tunnel <port> [provider] [host] start; without a provider: TUNNEL_DEFAULT, else the first ready one
+#   tunnel <port> [provider] [host] start; without a provider: TUNNEL_DEFAULT, else the first
+#                                   ready PRIVATE one. Public providers ask first (-y to skip).
 #   tunnel ls                       running tunnels and their URLs
 #   tunnel stop <port|all> [provider]
 #   tunnel providers                every provider: reach, ready or what's missing
@@ -18,7 +19,7 @@ source "$DOTFILES_DIR/lib/tunnels.sh"
 load_config
 
 usage() {
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -57,11 +58,19 @@ cmd_start() {
         fi
     fi
     tunnel_known "$id" || die "unknown provider '$id' — see: tunnel providers"
+    # The Hermes dashboard is a web terminal: never tunnel around its nginx allowlist.
+    [[ $port == "${HERMES_DASHBOARD_PORT:-9119}" ]] &&
+        die "port $port is the Hermes dashboard — it's published (with its allowlist) by nginx, not by tunnels"
     local why
     why="$("${id}_ready" 2>&1)" || die "$id isn't ready: ${why:-$(tunnel_get "$id" setup)}"
     net_answers "$port" || warn "nothing answers on 127.0.0.1:$port yet — the tunnel will show errors until it does"
-    [[ $(tunnel_get "$id" reach) == public ]] &&
+    if [[ $(tunnel_get "$id" reach) == public ]]; then
         warn "public: anyone with the URL reaches 127.0.0.1:$port — no auth unless your app has it"
+        if ((! YES)); then
+            ui_interactive || die "public tunnel needs confirmation: run it at a terminal, or add -y"
+            ASSUME_YES=0 ui_confirm "Expose 127.0.0.1:$port to the internet via $id?" || die "cancelled"
+        fi
+    fi
     log "$id → 127.0.0.1:$port"
     local url
     url="$("${id}_start" "$port" "$host")" || die "$id failed to start"
@@ -108,6 +117,13 @@ wizard() {
     id="$(ui_choose "How should it be reachable?" "${items[@]}")" || exit 0
     cmd_start "$port" "$id"
 }
+
+YES=0
+args=()
+for a in "$@"; do
+    case $a in -y | --yes) YES=1 ;; *) args+=("$a") ;; esac
+done
+set -- "${args[@]}"
 
 case ${1:-} in
 '') if ui_interactive; then wizard; else usage; fi ;;

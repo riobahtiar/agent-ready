@@ -2,6 +2,7 @@
 # stage-user: root
 # stage-os: debian+systemd+nowsl
 # stage-profile: server
+# stage-inputs: nginx
 # stage-desc: nginx + certbot (webroot), php-fpm + composer — host mini projects with `site add`
 set -Eeuo pipefail
 source "$DOTFILES_DIR/lib/common.sh"
@@ -21,8 +22,16 @@ fi
 snapshot="$(mktemp)"
 as_root tar -C /etc -czf "$snapshot" nginx
 
-# Only the Ubuntu welcome site goes; anything you added by hand stays.
-as_root rm -f /etc/nginx/sites-enabled/default
+# Only the untouched Ubuntu welcome site goes (a link to the package's
+# default that still serves /var/www/html); an edited one is someone's site.
+default_site=/etc/nginx/sites-enabled/default
+if as_root test -L "$default_site"; then
+    if as_root grep -q 'root /var/www/html;' "$default_site" && ! as_root grep -qE '^[[:space:]]*(proxy_pass|server_name[[:space:]]+[^_])' "$default_site"; then
+        as_root rm -f "$default_site"
+    else
+        warn "kept sites-enabled/default: it was edited (serves something besides the welcome page)"
+    fi
+fi
 install_file "$DOTFILES_DIR/nginx/cloud.conf" /etc/nginx/conf.d/cloud.conf
 for snippet in "$DOTFILES_DIR"/nginx/snippets/*.conf; do
     install_file "$snippet" "/etc/nginx/snippets/$(basename "$snippet")"

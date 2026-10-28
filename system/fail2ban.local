@@ -4,6 +4,8 @@ bantime  = 1h
 findtime = 10m
 maxretry = 5
 backend  = systemd
+# Never ban yourself: loopback, Tailscale, the IP you installed from, and F2B_IGNORE_IPS.
+ignoreip = __IGNORE__
 # Repeat offenders get a week.
 bantime.increment = true
 bantime.maxtime   = 1w

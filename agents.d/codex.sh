@@ -2,6 +2,7 @@
 # OpenAI Codex CLI — an npm package, so mise manages it
 # (home/.config/mise/conf.d/30-agents.toml).
 agent_define codex \
+    env="OPENAI_API_KEY" \
     title="Codex (OpenAI)" \
     wrapper=b-codex \
     herdr=codex \

@@ -58,6 +58,13 @@ this file covers how to change things safely.
   no, `ASSUME_YES=1` for `-y`). `cleanup` never deletes dirty worktrees,
   unpushed commits or named volumes, and `--auto` stays report-only for
   worktrees and processes.
+- **Root never writes into user-owned paths.** `~/.dotfiles`, `~/.hermes`,
+  `.state` belong to the user, who may be a prompt-injected agent: write there
+  with `run_as_user` (values on stdin), and use `safe_target`/`atomic_replace`
+  (no symlinks, temp + `mv`) for any file rewrite.
+- **A stage that can't finish says so.** `stage_incomplete "<why>"`: the stage
+  still completes, isn't marked applied, and `--changed` retries it. Plain
+  `warn` is for things that are fine to leave.
 - **No secrets in the repo or on command lines.** `config.env` (git-ignored),
   `~/.config/secrets.env`, tool login stores. Pipe passwords on stdin, and pass
   tokens to curl with `-K -` or through 0600 files.

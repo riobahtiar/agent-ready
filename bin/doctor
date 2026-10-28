@@ -74,7 +74,18 @@ if ((HAS_SYSTEMD)); then
         22 | 80 | 443) good "$addr ${proc:-}" ;;
         *) bad "$addr ${proc:-} — public? bind it to 127.0.0.1 and use: site add" ;;
         esac
-    done < <(ss -tlnpH 2>/dev/null | awk '$4 !~ /^(127\.|\[::1\]|\[::ffff:127|100\.)/ {p=$6; sub(/.*\(\("/, "", p); sub(/".*/, "", p); print $4, p}' | sort -u)
+    done < <(ss -tlnpH 2>/dev/null | awk '
+        # loopback, and Tailscale CGNAT 100.64.0.0/10 only (not all of 100/8)
+        $4 ~ /^(127\.|\[::1\]|\[::ffff:127)/ { next }
+        $4 ~ /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./ { next }
+        { p = $6; sub(/.*\(\("/, "", p); sub(/".*/, "", p); print $4, p }' | sort -u)
+    # UDP too: often legit (tailscaled, mosh), worth knowing about.
+    while read -r addr proc; do
+        case $proc in tailscaled | mosh-server | systemd-resolve | chronyd | systemd-timesyn) good "udp $addr $proc" ;; *) meh "udp $addr ${proc:-?} listening publicly" ;; esac
+    done < <(ss -ulnpH 2>/dev/null | awk '
+        $4 ~ /^(127\.|\[::1\]|\[::ffff:127|\[fe80|fe80)/ { next }
+        $4 ~ /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./ { next }
+        { p = $0; sub(/.*\(\("/, "", p); sub(/".*/, "", p); if (p == $0) p = ""; print $4, p }' | sort -u)
 fi
 
 if ((! BRIEF)); then

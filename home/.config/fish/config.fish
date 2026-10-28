@@ -49,16 +49,18 @@ set -gx EDITOR (command -s nvim; or command -s vim; or echo nano)
 set -gx VISUAL $EDITOR
 set -gx PAGER less
 set -gx LESS -R
-# PROJECTS_DIR from config.env when set there (empty = ~/projects). config.env
-# is bash syntax, so bash evaluates it (quotes, spaces, ~, $HOME), as install.sh does.
+# PROJECTS_DIR as resolved from config.env by the dotfiles stage (one line;
+# never executes config.env here, so a bad edit there can't break logins).
 set -l projects
-if test -r ~/.dotfiles/config.env
-    set projects (command bash -c 'PROJECTS_DIR=; . "$HOME/.dotfiles/config.env" >/dev/null 2>&1; printf %s "$PROJECTS_DIR"' 2>/dev/null)
-end
+test -r ~/.config/dotfiles/projects_dir; and read -l projects < ~/.config/dotfiles/projects_dir
 if test -n "$projects"
     set -gx PROJECTS_DIR $projects
 else
     set -gx PROJECTS_DIR "$HOME/projects"
+end
+# Flutter publishes no linux-arm64 SDK (see lib/common.sh).
+if test (uname -s) = Linux; and test (uname -m) = aarch64; and not string match -q '*flutter*' -- "$MISE_DISABLE_TOOLS"
+    set -gx MISE_DISABLE_TOOLS (string join , -- (string split , -- $MISE_DISABLE_TOOLS) flutter | string trim -c ,)
 end
 # Opt out of CLI telemetry (cf, wrangler, Next.js, Homebrew, … honour it).
 set -gx DO_NOT_TRACK 1

@@ -66,7 +66,15 @@ function clone --description "git clone into \$PROJECTS_DIR and cd there (url or
     string match -qr '^[\w.-]+/[\w.-]+$' -- $src; and set src "https://github.com/$src.git"
     set -l name (string replace -r '\.git$' '' -- (basename $src))
     test (count $argv) -ge 2; and set name $argv[2]
-    command git clone $src "$PROJECTS_DIR/$name"; and cd "$PROJECTS_DIR/$name"
+    command git clone $src "$PROJECTS_DIR/$name"; and cd "$PROJECTS_DIR/$name"; or return
+    # A repo's mise config can run code ([env] exec, _.source, hooks): show it, trust on request.
+    for f in mise.toml .mise.toml mise.local.toml .config/mise.toml
+        test -f $f; or continue
+        echo "── $f ──"
+        command head -40 $f
+        __confirm "Trust this repo's mise config (lets it run the code above)? [y/N] "; and command mise trust --quiet
+        break
+    end
 end
 
 # wt - make an isolated git worktree for an agent task, next to the repo:

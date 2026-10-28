@@ -23,7 +23,10 @@
 idiomatic_version_file_enable_tools = ["node", "python"]
 # 4 vCPU / 6 GB: don't let parallel installs and compiles starve running agents.
 jobs = 2
-# Agents run non-interactively — a "trust this config?" prompt would hang them.
-trusted_config_paths = ["~/projects", "~/.dotfiles"]
+# Only this repo is trusted up front. A project's mise.toml can run code
+# ([env] exec templates, _.source scripts, hooks), so trusting all of
+# ~/projects would make `git clone` + `cd` code execution. Review a cloned
+# repo's mise.toml, then `mise trust` it (the `clone` helper offers to).
+trusted_config_paths = ["~/.dotfiles"]
 # Missing per-project tools install on first use instead of erroring.
 not_found_auto_install = true

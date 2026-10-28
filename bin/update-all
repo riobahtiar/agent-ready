@@ -162,7 +162,7 @@ fi
 # system_upgrade — refresh + full upgrade with this OS's package manager.
 system_upgrade() {
     case $OS_FAMILY in
-    debian) pkg_refresh && pkg_upgrade && as_root apt-get autoremove --purge -y -qq ;;
+    debian) pkg_refresh && pkg_upgrade && as_root apt-get autoremove -y -qq ;;
     arch) pkg_upgrade ;; # pacman -Syu: refresh and upgrade together
     fedora | macos) pkg_refresh && pkg_upgrade ;;
     *)

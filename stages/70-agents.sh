@@ -17,7 +17,7 @@ for agent in $AGENTS; do
         step "$agent is installed by the $(agent_get "$agent" managed | cut -d: -f2) stage"
         continue
     fi
-    agent_install "$agent" || warn "$agent: install failed — retry with: agents install $agent"
+    agent_install "$agent" || stage_incomplete "$agent: install failed — retry with: agents install $agent"
     if agent_installed "$agent"; then _agent_hook "$agent" configure || true; fi
 done
 

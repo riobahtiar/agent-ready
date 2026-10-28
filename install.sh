@@ -42,6 +42,7 @@ set -Eeuo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export DOTFILES_DIR
+SELF="$DOTFILES_DIR/install.sh" # absolute: `bash install.sh` re-execs too
 # shellcheck source=lib/common.sh
 source "$DOTFILES_DIR/lib/common.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
@@ -65,18 +66,26 @@ list_stages() {
 orig_args=("$@")
 selected=()
 MODE='' CONFIGURE=0 # MODE: all | changed | renew | pick
+# Modes don't combine (`docker --changed` would silently mean "every changed stage").
+set_mode() {
+    [[ -z $MODE || $MODE == "$1" ]] || die "pick one: stage names, --all, --changed or --renew"
+    MODE=$1
+}
 while (($#)); do
     case $1 in
     -h | --help) usage ;;
     -l | --list) list_stages && exit 0 ;;
     -s | --status) load_config && stages_status && exit 0 ;;
-    -a | --all) MODE=all ;;
-    --changed) MODE=changed ;;
-    --renew) MODE=renew ;;
+    -a | --all) set_mode all ;;
+    --changed) set_mode changed ;;
+    --renew) set_mode renew ;;
     -c | --configure) CONFIGURE=1 ;;
     -y | --yes) export ASSUME_YES=1 ;;
     -*) usage 2 ;;
-    *) selected+=("$1") MODE=pick ;;
+    *)
+        set_mode pick
+        selected+=("$1")
+        ;;
     esac
     shift
 done
@@ -101,18 +110,36 @@ fi
     die "Missing config.env — run: ./install.sh --configure (or cp config.env.example config.env)"
 load_config
 
-# setup-server.sh / setup-desktop.sh pin the profile and record it in config.env.
-if [[ -n ${PROFILE_OVERRIDE:-} && $PROFILE_OVERRIDE != "$PROFILE" ]]; then
-    CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
-    if [[ -n $(config_value PROFILE) ]] && setup_done; then
-        ui_confirm "This machine is set up as '$PROFILE'. Switch it to '$PROFILE_OVERRIDE'? (stages for '$PROFILE' are not undone)" ||
-            die "kept profile '$PROFILE'"
-    fi
-    config_set "$CONFIG_FILE" PROFILE "$PROFILE_OVERRIDE"
-    is_root && chown "$(os_owner "$DOTFILES_DIR")" "$CONFIG_FILE"
-    PROFILE=$PROFILE_OVERRIDE
-    export PROFILE
+# The profile is always written down once decided: auto-detection can change
+# under it (an `ssh -X` session, a package that installs a desktop session).
+CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+if [[ -n ${PROFILE_OVERRIDE:-} && $PROFILE_OVERRIDE != "$PROFILE" ]] && [[ -n $(config_value PROFILE) ]] && setup_done; then
+    # Never auto-answered by -y: switching skips (or adds) whole server stages.
+    has_tty || die "this machine is set up as '$PROFILE' — switching to '$PROFILE_OVERRIDE' needs you at a terminal"
+    ASSUME_YES=0 ui_confirm "This machine is set up as '$PROFILE'. Switch it to '$PROFILE_OVERRIDE'? (stages for '$PROFILE' are not undone)" ||
+        die "kept profile '$PROFILE'"
+fi
+if [[ -n ${PROFILE_OVERRIDE:-} ]]; then PROFILE=$PROFILE_OVERRIDE; fi
+if [[ $(config_value PROFILE) != "$PROFILE" ]]; then
+    config_set "$CONFIG_FILE" PROFILE "$PROFILE"
     step "profile: $PROFILE (saved in config.env)"
+fi
+export PROFILE
+
+# Everything (shell hooks, PATH, the cleanup timer, the sandbox policy) expects
+# the repo at ~/.dotfiles. Elsewhere, link it there rather than half-work.
+if [[ $DOTFILES_DIR != "$TARGET_HOME/.dotfiles" ]]; then
+    if [[ ! -e $TARGET_HOME/.dotfiles && ! -L $TARGET_HOME/.dotfiles ]]; then
+        run_as_user ln -s "$DOTFILES_DIR" "$TARGET_HOME/.dotfiles"
+        step "linked ~/.dotfiles → $DOTFILES_DIR"
+    elif [[ $(readlink -f "$TARGET_HOME/.dotfiles") != "$DOTFILES_DIR" ]]; then
+        die "~/.dotfiles is another checkout — run install.sh from there, or move it aside"
+    fi
+fi
+
+# Server profile somewhere only part of it is supported: say so up front.
+if [[ $PROFILE == server && $OS_FAMILY != debian ]]; then
+    warn "server profile on $OS_PRETTY: SSH hardening/firewall run only on Debian/Ubuntu and Arch; nginx, Let's Encrypt and Hermes only on Debian/Ubuntu (docs/08-multi-os.md)"
 fi
 
 count_changed() {
@@ -157,7 +184,7 @@ if asking; then
         MODE=pick
         ;;
     status) stages_status && exit 0 ;;
-    configure) configure_wizard && exec "$0" ;;
+    configure) configure_wizard && exec "$SELF" ;;
     *) exit 0 ;;
     esac
     if [[ $MODE == renew ]]; then
@@ -180,15 +207,21 @@ if [[ $OS_KIND == linux ]] && ! is_root; then
     log "Re-running with sudo…"
     # sudo resets the environment; carry over the knobs the docs mention.
     passthrough=()
-    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE; do
+    # (SSH_CONNECTION: stage 20 never lets fail2ban ban the address you're installing from.)
+    # DOTFILES_CONFIG only from inside the repo: root sources that file.
+    if [[ -n ${DOTFILES_CONFIG:-} && $(readlink -f "$DOTFILES_CONFIG") != "$DOTFILES_DIR"/* ]]; then
+        die "DOTFILES_CONFIG must point inside $DOTFILES_DIR (root sources it)"
+    fi
+    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE SSH_CONNECTION; do
         [[ -n ${!var:-} ]] && passthrough+=("$var=${!var}")
     done
-    exec sudo -- env "${passthrough[@]}" "$0" "${orig_args[@]}"
+    exec sudo -- env "${passthrough[@]}" "$SELF" "${orig_args[@]}"
 fi
 [[ $OS_KIND == macos ]] && is_root && die "on macOS run install.sh as yourself, not with sudo (Homebrew refuses root)"
 id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
 
 [[ $MODE == renew ]] && export RENEW=1
+export INSTALL_MODE=$MODE
 
 wanted() {
     local f=$1 name pick
@@ -211,6 +244,8 @@ fi
 started=$SECONDS
 ran=0 skipped=0
 current=''
+incomplete=()
+skipped_server=()
 trap '[[ -n $current ]] && warn "stage $current failed — fix the cause, then: ./install.sh --changed (picks up from there)"' ERR
 # Read the list first: a stage that reads stdin (fish -c, installers) must not
 # swallow the remaining stage names.
@@ -221,22 +256,39 @@ for stage in "${all_stages[@]}"; do
     reason="$(stage_skip_reason "$stage")"
     if [[ -n $reason ]]; then
         [[ $MODE == pick ]] && warn "$name skipped: $reason"
+        [[ $(stage_profile "$stage") == server && $PROFILE == server ]] && skipped_server+=("$name")
         skipped=$((skipped + 1))
         continue
     fi
     user="$(stage_user "$stage")"
     current=$name
     log "${C_BOLD}$name${C_RESET} ($user) — $(stage_desc "$stage")"
+    # A stage can finish but report work left undone (stage_incomplete):
+    # then it isn't recorded as applied, and --changed retries it.
+    # Owned by whoever runs the stage: root may not write a user's file in
+    # /tmp (fs.protected_regular), and root shouldn't write into user paths.
+    if [[ $user == user ]]; then
+        STAGE_INCOMPLETE_FILE="$(run_as_user mktemp)"
+    else
+        STAGE_INCOMPLETE_FILE="$(mktemp)"
+    fi
+    export STAGE_INCOMPLETE_FILE
+    # "$BASH": the bash ≥ 4 we run in, not whichever bash comes first on PATH.
     case $user in
-    root) bash "$stage" ;;
-    user) run_as_user bash "$stage" ;;
+    root) "$BASH" "$stage" ;;
+    user) run_as_user env STAGE_INCOMPLETE_FILE="$STAGE_INCOMPLETE_FILE" "$BASH" "$stage" ;;
     *) die "$name: missing '# stage-user: root|user' header" ;;
     esac
-    stage_mark "$stage"
+    if [[ -s $STAGE_INCOMPLETE_FILE ]]; then
+        incomplete+=("$name")
+        warn "$name finished with work left — not marked applied; --changed will retry it"
+    else
+        stage_mark "$stage"
+    fi
+    rm -f "$STAGE_INCOMPLETE_FILE"
     ran=$((ran + 1))
 done
 current=''
-if is_root; then chown -R "$(os_owner "$DOTFILES_DIR")" "$DOTFILES_DIR/.state" 2>/dev/null || true; fi
 
 if ((ran == 0)); then
     case $MODE in
@@ -245,6 +297,8 @@ if ((ran == 0)); then
     esac
 fi
 ok "Done: $ran stage(s) in $((SECONDS - started))s$( ((skipped)) && echo " · $skipped not for this machine")"
+((${#incomplete[@]})) && warn "incomplete (re-run with --changed once fixed): ${incomplete[*]}"
+((${#skipped_server[@]})) && warn "server stages NOT applied on this OS: ${skipped_server[*]} — this box lacks that protection"
 
 if [[ $MODE == renew ]]; then
     log "Renew: remaining upgrades and site re-render"

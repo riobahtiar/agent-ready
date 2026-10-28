@@ -63,8 +63,10 @@ as_root sysctl --quiet --load /etc/sysctl.d/90-cloud.conf
 install_file "$DOTFILES_DIR/system/limits.conf" /etc/security/limits.d/90-cloud.conf
 install_file "$DOTFILES_DIR/system/systemd-limits.conf" /etc/systemd/system.conf.d/90-cloud.conf
 install_file "$DOTFILES_DIR/system/systemd-limits.conf" /etc/systemd/user.conf.d/90-cloud.conf
-install_file "$DOTFILES_DIR/system/journald.conf" /etc/systemd/journald.conf.d/90-cloud.conf
-as_root systemctl restart systemd-journald
+# Restart journald only when its config changed (not on every re-run).
+if install_changed "$DOTFILES_DIR/system/journald.conf" /etc/systemd/journald.conf.d/90-cloud.conf; then
+    as_root systemctl restart systemd-journald
+fi
 
 if [[ $OS_FAMILY == debian ]]; then
     log "Unattended security upgrades (no auto-reboot)"

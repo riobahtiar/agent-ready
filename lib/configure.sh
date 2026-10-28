@@ -8,7 +8,8 @@
 config_set() {
     local file=$1 key=$2 value=$3 quoted tmp line done=0
     quoted="'${value//\'/\'\\\'\'}'"
-    tmp="$(mktemp)"
+    safe_target "$file"
+    tmp="$(mktemp "$(dirname "$file")/.config_set.XXXXXX")"
     while IFS= read -r line || [[ -n $line ]]; do
         if ((! done)) && [[ $line == "$key="* ]]; then
             local comment=''
@@ -20,8 +21,9 @@ config_set() {
         fi
     done <"$file" >"$tmp"
     ((done)) || printf '%s=%s\n' "$key" "$quoted" >>"$tmp"
-    cat "$tmp" >"$file"
-    rm -f "$tmp"
+    # Keep the file's owner when root edits the user's config.env.
+    if is_root && [[ -f $file ]]; then chown -h "$(os_owner "$file")" "$tmp"; fi
+    atomic_replace "$file" "$tmp"
 }
 
 # config_value <KEY> — current value from config.env (sourced in a subshell).
@@ -158,7 +160,7 @@ configure_wizard() {
         step "the dashboard password is asked during the hermes stage (never stored in config.env)"
     fi
     # Written as root (install.sh run directly by root): hand it back to the repo owner.
-    is_root && chown "$(stat -c %U:%G "$DOTFILES_DIR")" "$CONFIG_FILE"
+    if is_root; then chown -h "$(os_owner "$DOTFILES_DIR")" "$CONFIG_FILE"; fi
     ok "saved ${CONFIG_FILE/#$HOME/\~} — re-run the stages that use what you changed"
 }
 

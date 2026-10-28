@@ -73,11 +73,13 @@ stage_hash() {
 # stage_last <file> — "timestamp rev digest" of the last successful run, or nothing.
 stage_last() { cat "$STAGE_STATE_DIR/$(stage_name "$1")" 2>/dev/null || true; }
 
+# Written AS THE USER: .state lives in the user's repo, and root writing there
+# would follow a planted symlink (.state/stages → /etc/sudoers.d).
 stage_mark() {
-    local f=$1 rev
+    local f=$1 rev line
     rev="$(git -C "$DOTFILES_DIR" rev-parse --short HEAD 2>/dev/null || echo -)"
-    mkdir -p "$STAGE_STATE_DIR"
-    printf '%s %s %s\n' "$(date -u '+%Y-%m-%dT%H:%MZ')" "$rev" "$(stage_hash "$f")" >"$STAGE_STATE_DIR/$(stage_name "$f")"
+    line="$(date -u '+%Y-%m-%dT%H:%MZ') $rev $(stage_hash "$f")"
+    printf '%s\n' "$line" | run_as_user bash -c 'mkdir -p "$1" && cat >"$1/$2"' _ "$STAGE_STATE_DIR" "$(stage_name "$f")"
 }
 
 stage_changed() {

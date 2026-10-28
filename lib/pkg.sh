@@ -70,10 +70,23 @@ _pkg_brew() {
     if is_root; then run_as_user brew "$@"; else brew "$@"; fi
 }
 
+# Arch removes the running kernel's modules on upgrade: until a reboot, loading
+# new ones (ufw/iptables, zram, docker, tun) fails.
+_arch_reboot_check() {
+    [[ -d /usr/lib/modules/$(uname -r) ]] ||
+        warn "the kernel was upgraded — reboot before relying on firewall, Docker, zram or Tailscale"
+}
+
+# Debian: never stop at a "modified config file" question; keep local edits.
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+
 pkg_refresh() {
     case $OS_FAMILY in
     debian) as_root apt-get update -qq ;;
-    arch) as_root pacman -Syu --noconfirm --needed >/dev/null ;;
+    arch)
+        as_root pacman -Syu --noconfirm --needed >/dev/null
+        _arch_reboot_check
+        ;;
     fedora) as_root dnf -q makecache ;;
     macos) _pkg_brew update --quiet ;;
     *) warn "unknown package manager on $OS_PRETTY — install packages yourself" ;;
@@ -82,8 +95,11 @@ pkg_refresh() {
 
 pkg_upgrade() {
     case $OS_FAMILY in
-    debian) as_root apt-get full-upgrade -y -qq ;;
-    arch) as_root pacman -Syu --noconfirm ;;
+    debian) as_root apt-get "${APT_OPTS[@]}" full-upgrade -y -qq ;;
+    arch)
+        as_root pacman -Syu --noconfirm
+        _arch_reboot_check
+        ;;
     fedora) as_root dnf -y -q upgrade ;;
     macos) _pkg_brew upgrade ;;
     esac
@@ -114,9 +130,16 @@ pkg_install() {
     done
     ((${#native[@]})) || return 0
     case $OS_FAMILY in
-    debian) as_root apt-get install -y -qq --no-install-recommends "${native[@]}" ;;
+    debian) as_root apt-get "${APT_OPTS[@]}" install -y -qq --no-install-recommends "${native[@]}" ;;
     arch) as_root pacman -S --noconfirm --needed "${native[@]}" ;;
-    fedora) as_root dnf -y -q install "${native[@]}" ;;
+    fedora)
+        # Groups (@development-tools) differ between Fedora and RHEL clones:
+        # install them on their own so one missing group can't sink the rest.
+        local -a groups=() pkgs=()
+        for n in "${native[@]}"; do if [[ $n == @* ]]; then groups+=("${n#@}"); else pkgs+=("$n"); fi; done
+        for n in "${groups[@]}"; do as_root dnf -y -q group install "$n" || warn "dnf group '$n' not available — skipped"; done
+        ((${#pkgs[@]} == 0)) || as_root dnf -y -q install "${pkgs[@]}"
+        ;;
     macos) _pkg_brew install --quiet "${native[@]}" || warn "brew could not install some of: ${native[*]}" ;;
     *) warn "install these yourself: ${native[*]}" ;;
     esac

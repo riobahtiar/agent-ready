@@ -174,13 +174,24 @@ clean_docker() {
     fi
     docker system df 2>/dev/null | sed 's/^/    /' >&2
     local hours=$((DAYS * 24))
-    step "stopped containers (>24h), dangling images, unused networks, build cache >${DAYS}d"
-    run docker container prune --force --filter "until=24h"
+    step "dangling images, unused networks, build cache >${DAYS}d"
+    # Stopped containers are NOT pruned automatically: Docker's `until` filter
+    # is creation time, so it would remove any old container the moment it
+    # stops (reboot, crash) together with its writable layer.
+    local stopped
+    stopped="$(docker ps -a --filter status=exited --filter status=created --format '{{.Names}} ({{.Image}}, {{.Status}})' 2>/dev/null || true)"
+    if [[ -n $stopped ]]; then
+        step "stopped containers (kept unless you confirm):"
+        sed 's/^/      /' <<<"$stopped" >&2
+        if ((! AUTO && ! DRY)) && has_tty && ui_confirm "      Remove these stopped containers?"; then
+            run docker container prune --force
+        fi
+    fi
     run docker image prune --force
     run docker network prune --force
     run docker builder prune --force --filter "until=${hours}h"
     if ((DEEP)); then
-        step "unused images older than ${DAYS}d (--deep)"
+        step "unused images older than ${DAYS}d (--deep; local builds/commits not in a registry are gone too)"
         run docker image prune --all --force --filter "until=${hours}h"
     fi
     if ((VOLUMES)); then
@@ -202,36 +213,44 @@ default_branch() {
     printf '%s\n' "$ref"
 }
 
-# Remote branch tips seen by earlier runs, so a branch whose remote was
-# deleted (merged PR) can be told apart from one with work never pushed.
-tips_file() { printf '%s/cleanup-remote-tips' "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; }
-remember_remote_tips() {
-    local file
-    file="$(tips_file "$1")"
-    [[ -d $(dirname "$file") ]] || return 0
-    git -C "$1" for-each-ref --format='%(refname:lstrip=3) %(objectname)' refs/remotes/origin 2>/dev/null |
-        grep -v '^HEAD ' >>"$file" || true
-    sort -u -o "$file" "$file" 2>/dev/null || true
+# squash_merged <repo> <base> <branch> — base already contains the branch's
+# changes as one commit (a squash/rebase merge): diff the branch against its
+# merge-base as a single synthetic commit and ask `git cherry` (patch-id).
+squash_merged() {
+    local repo=$1 base=$2 branch=$3 mb tmp
+    [[ -n $base ]] || return 1
+    mb="$(git -C "$repo" merge-base "$base" "$branch" 2>/dev/null)" || return 1
+    tmp="$(git -C "$repo" commit-tree "$branch^{tree}" -p "$mb" -m squash-probe 2>/dev/null)" || return 1
+    [[ $(git -C "$repo" cherry "$base" "$tmp" 2>/dev/null) == "-"* ]]
 }
 
-# tip_published <repo> <branch> <sha> — the remote had exactly this commit:
-# it's reachable from a remote ref, an earlier run saw it as the remote tip,
-# or GitHub shows a merged PR whose head was this commit.
-tip_published() {
-    local repo=$1 branch=$2 tip=$3
+# merged_elsewhere <repo> <base> <branch> <sha> — this commit's work survives
+# without the branch: it's on a remote ref, it was squash-merged into base, or
+# GitHub shows a merged PR whose head was exactly this commit. "The remote
+# branch was deleted" alone proves nothing (it may have been deleted unmerged).
+merged_elsewhere() {
+    local repo=$1 base=$2 branch=$3 tip=$4
     [[ -z $(git -C "$repo" rev-list "$tip" --not --remotes 2>/dev/null | head -1) ]] && return 0
-    grep -qxF "$branch $tip" "$(tips_file "$repo")" 2>/dev/null && return 0
+    squash_merged "$repo" "$base" "$branch" && return 0
     if ((FETCH)) && have gh && [[ $(git -C "$repo" remote get-url origin 2>/dev/null) == *github.com* ]]; then
         (cd "$repo" && with_timeout 15 gh pr list --state merged --head "$branch" --json headRefOid --jq '.[].headRefOid' 2>/dev/null) |
-            grep -qx "$tip" && return 0
+            grep -qxF "$tip" && return 0
     fi
     return 1
 }
 
-# worktree_in_use <path> — one of your processes has its cwd inside it (Linux).
+# Ignored paths that are safe to lose with a worktree (rebuilt by tools).
+REGENERABLE='(^|/)(node_modules|\.next|dist|build|out|target|\.turbo|\.cache|\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|coverage|\.dart_tool|\.gradle|\.parcel-cache|\.svelte-kit|\.nuxt|\.output|\.vite|storybook-static|\.pnpm-store|\.expo)/?$|\.(pyc|log|tsbuildinfo)$|(^|/)\.DS_Store$'
+
+# worktree_in_use <path> — one of your processes has its cwd inside it.
 worktree_in_use() {
     local cwd p
-    [[ -d /proc ]] || return 1
+    if [[ ! -d /proc ]]; then
+        # macOS: lsof lists every process's cwd.
+        lsof -a -d cwd -u "$(id -u)" -Fn 2>/dev/null | sed -n 's/^n//p' |
+            awk -v p="$1" '$0 == p || index($0, p "/") == 1 { found = 1 } END { exit !found }'
+        return
+    fi
     for p in /proc/[0-9]*; do
         [[ -O $p ]] || continue
         cwd="$(readlink "$p/cwd" 2>/dev/null)" || continue
@@ -246,6 +265,20 @@ worktree_verdict() {
     [[ -d $path ]] || return 0
     if [[ -n $(git -C "$path" status --porcelain --untracked-files=normal 2>/dev/null | head -1) ]]; then
         echo "keep:dirty"
+        return
+    fi
+    # `git worktree remove` deletes ignored files and nested checkouts without
+    # asking. Keep anything holding either: .env, keys, agent memory, and other
+    # worktrees are exactly what global gitignores hide.
+    if [[ -n $(find "$path" -mindepth 2 \( -name node_modules -prune \) -o -name .git -print -quit 2>/dev/null) ]]; then
+        echo "keep:contains a nested repo or worktree"
+        return
+    fi
+    local precious
+    precious="$(git -C "$path" status --porcelain --ignored=matching 2>/dev/null | sed -n 's/^!! //p' |
+        grep -vE "$REGENERABLE" | head -3 | tr '\n' ' ' || true)"
+    if [[ -n $precious ]]; then
+        echo "keep:ignored files that aren't build output: ${precious% }"
         return
     fi
     # A fresh worktree (no commits yet) is "merged" too: nothing that was
@@ -265,11 +298,11 @@ worktree_verdict() {
         return
     fi
     if [[ -n $branch ]] && [[ $(git -C "$repo" for-each-ref --format='%(upstream:track)' "refs/heads/$branch") == "[gone]" ]]; then
-        # Its commits are on no remote now, so only a provably pushed tip may go.
-        if tip_published "$repo" "$branch" "$head"; then
-            echo "upstream gone, tip was pushed"
+        # Its commits may be on no remote now: only provably merged work may go.
+        if merged_elsewhere "$repo" "$base" "$branch" "$head"; then
+            echo "upstream gone, work merged"
         else
-            echo "keep:remote branch deleted but HEAD was never seen on it — git log ${base:-origin}..$branch"
+            echo "keep:remote branch deleted, no proof it was merged — git log ${base:-origin}..$branch"
         fi
         return
     fi
@@ -290,7 +323,6 @@ worktree_verdict() {
 
 clean_repo_worktrees() {
     local repo=$1 base
-    remember_remote_tips "$repo" # before --prune forgets branches deleted upstream
     # A moved repo: reconnect its in-repo worktrees before `prune` below
     # forgets them (their metadata still points at the old path).
     local -a moved=()
@@ -298,13 +330,16 @@ clean_repo_worktrees() {
     while IFS= read -r -d '' g; do moved+=("$(dirname "$g")"); done < <(
         find "$repo/.worktrees" "$repo/.claude/worktrees" -mindepth 1 -maxdepth 3 -name .git -type f -print0 2>/dev/null
     )
-    if ((${#moved[@]})) && ((! DRY)); then git -C "$repo" worktree repair "${moved[@]}" >/dev/null 2>&1 || true; fi
+    # --auto is report-only: no repair, no prune, no fetch.
+    if ((${#moved[@]})) && ((! DRY && ! AUTO)); then git -C "$repo" worktree repair "${moved[@]}" >/dev/null 2>&1 || true; fi
     ((FETCH)) && git -C "$repo" remote get-url origin >/dev/null 2>&1 &&
         with_timeout 30 git -C "$repo" fetch --prune --quiet origin 2>/dev/null || true
-    if ((DRY)); then
-        git -C "$repo" worktree prune --dry-run --verbose 2>&1 | sed 's/^/      /' >&2 || true
+    # Same grace as `git gc`: metadata of a worktree that's just unreachable for
+    # now (moved, unmounted disk, detached HEAD with commits) isn't forgotten.
+    if ((DRY || AUTO)); then
+        git -C "$repo" worktree prune --dry-run --verbose --expire 3.months.ago 2>&1 | sed 's/^/      /' >&2 || true
     else
-        git -C "$repo" worktree prune 2>/dev/null || true
+        git -C "$repo" worktree prune --expire 3.months.ago 2>/dev/null || true
     fi
     base="$(default_branch "$repo")"
 
@@ -356,11 +391,11 @@ clean_repo_worktrees() {
     for branch in $gone; do
         git -C "$repo" worktree list --porcelain | grep -qx "branch refs/heads/$branch" && continue
         [[ $(git -C "$repo" branch --show-current) == "$branch" ]] && continue
-        if ! tip_published "$repo" "$branch" "$(git -C "$repo" rev-parse "refs/heads/$branch")"; then
-            printf '%s    keep  branch %s (remote deleted, tip never seen on it)%s\n' "$C_DIM" "$branch" "$C_RESET" >&2
+        if ! merged_elsewhere "$repo" "$base" "$branch" "$(git -C "$repo" rev-parse "refs/heads/$branch")"; then
+            printf '%s    keep  branch %s (remote deleted, no proof it was merged)%s\n' "$C_DIM" "$branch" "$C_RESET" >&2
             continue
         fi
-        printf '    %sdrop%s  branch %s — upstream gone, tip was pushed\n' "$C_YELLOW" "$C_RESET" "$branch" >&2
+        printf '    %sdrop%s  branch %s — upstream gone, work merged\n' "$C_YELLOW" "$C_RESET" "$branch" >&2
         ((AUTO)) && continue
         if ((DRY)) || confirm "      delete branch $branch? [y/N] "; then
             run git -C "$repo" branch -D "$branch"
@@ -429,9 +464,6 @@ clean_worktrees() {
     local gitdir repo
     while IFS= read -r -d '' gitdir; do
         repo="$(dirname "$gitdir")"
-        # Every repo, every run: the record is what later proves a deleted
-        # remote branch's tip was pushed.
-        remember_remote_tips "$repo"
         [[ -z $(git -C "$repo" worktree list 2>/dev/null | sed 1d) && -z $(git -C "$repo" for-each-ref --format='%(upstream:track)' refs/heads | grep -F '[gone]') ]] && continue
         step "${repo/#$HOME/\~}"
         clean_repo_worktrees "$repo"
@@ -454,12 +486,9 @@ clean_agents() {
     for dir in "$HOME/.grok" "$HOME/.omp" "$HOME/.pi" "$HOME/.muse" "$HOME/.local/state/herdr" "$HOME/.config/herdr"; do
         prune_old "$dir" "$DAYS" -name '*.log'
     done
-    if ((DEEP)); then
-        # Session history: resumable conversations. Only with --deep.
-        prune_old "$HOME/.codex/sessions" "$DAYS"
-        prune_old "$HOME/.local/share/opencode/snapshot" "$DAYS"
-        prune_old "$HOME/.local/share/opencode/storage" "$DAYS"
-    fi
+    # Session history (Codex sessions, OpenCode storage/snapshots) is never
+    # touched, not even by --deep: deleting by mtime leaves half-sessions and
+    # broken undo repos. The agents prune their own (Claude: cleanupPeriodDays).
 
     step "/tmp leftovers owned by $(id -un) (>1 day)"
     local -a tmp_hits=()
@@ -523,16 +552,23 @@ clean_system() {
     case $OS_FAMILY in
     debian)
         step "apt autoremove + clean"
-        run as_root apt-get autoremove --purge -y
+        # (no --purge: an autoremoved package keeps its /etc config, and data
+        # packages like postgresql-NN may purge their data directory)
+        run as_root apt-get autoremove -y
         run as_root apt-get clean
         ;;
     arch)
-        step "pacman cache (keep the last 2 versions) + orphans"
+        step "pacman cache (keep the last 2 versions)"
         if have paccache; then run as_root paccache -rk2; else run as_root pacman -Sc --noconfirm; fi
+        # Orphans may be optional deps you use: listed, removed only on request
+        # at a terminal, and with -s (configs kept as .pacsave), never -n.
         local orphans
         orphans="$(pacman -Qdtq 2>/dev/null || true)"
-        # shellcheck disable=SC2086
-        [[ -n $orphans ]] && run as_root pacman -Rns --noconfirm $orphans
+        if [[ -n $orphans ]]; then
+            step "orphaned packages: $(tr '\n' ' ' <<<"$orphans")"
+            # shellcheck disable=SC2086
+            if ((! DRY && ! AUTO)) && has_tty && ASSUME_YES=0 ui_confirm "      Remove them?"; then run as_root pacman -Rs --noconfirm $orphans; fi
+        fi
         ;;
     fedora)
         step "dnf autoremove + clean"
@@ -578,6 +614,9 @@ clean_procs() {
         [[ $ppid == 1 || $ppid == "$user_systemd" ]] || continue
         ((etimes > 3600)) || continue
         [[ $args =~ $pattern ]] || continue
+        # Desktop apps (Chromium, editors) live in app-*.scope under the user
+        # manager: never "orphans".
+        grep -qE 'app-[^/]*\.scope' "/proc/$pid/cgroup" 2>/dev/null && continue
         # Re-parented to the user manager is also what a healthy systemd
         # --user service looks like: skip any unit's main process.
         local unit main
@@ -596,7 +635,12 @@ clean_procs() {
         return 0
     }
     ((DRY)) && return 0
-    if confirm "  Terminate these ${#pids[@]} process(es)? [y/N] "; then
+    # Killing is never covered by -y: someone has to read the list.
+    if ! has_tty; then
+        step "  needs you at a terminal to confirm (-y doesn't cover killing processes)"
+        return 0
+    fi
+    if ASSUME_YES=0 confirm "  Terminate these ${#pids[@]} process(es)? [y/N] "; then
         kill -TERM "${pids[@]}" 2>/dev/null || true
         sleep 5
         kill -KILL "${pids[@]}" 2>/dev/null || true

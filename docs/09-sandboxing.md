@@ -22,12 +22,20 @@ reach. The layers below are ordered from lightest to strongest.
 `~/.srt-settings.json` (from `home/.srt-settings.json`) is the policy for
 `sandbox run` and `sandbox agent`:
 
+- **Environment:** a clean one (`PATH`, `HOME`, locale, terminal). The API keys
+  your shells export are **not** passed in; `sandbox agent X` adds only X's own
+  key (the module's `env=`).
 - **Network:** only GitHub, the npm/PyPI/Go/Packagist/pub registries, Bun, and
   the model APIs (Anthropic, OpenAI, xAI, OpenRouter, Gemini). Everything else
-  is blocked.
-- **Reads:** everything except `~/.ssh`, `~/.aws`, `~/.gnupg`,
-  `~/.cloudflared`, `~/.config/rclone`, `~/.config/secrets.env`,
-  `~/.hermes/.env`, `~/.dotfiles/config.env`, gh tokens and Docker credentials.
+  is blocked. This limits *where* data can go, not *whether*: anything with a
+  token for an allowed site (a git push, a gist, an npm publish) can still
+  carry data out.
+- **Reads:** everything except credentials: `~/.ssh`, `~/.aws`, `~/.gnupg`,
+  `~/.kube`, `~/.docker`, `~/.cloudflared`, `~/.config/rclone`, `~/.config/gh`,
+  wrangler, `~/.npmrc`, `~/.git-credentials`, `~/.netrc`, zrok,
+  `~/.config/secrets.env`, `~/.dotfiles/config.env`, all of `~/.hermes`, the
+  Claude/Codex OAuth files and shell history. `sandbox agent X` may use X's own
+  config dir (sign-in, sessions).
 - **Writes:** the current directory, `/tmp` and package caches only, and never
   `.env`, `.git/hooks` or `.git/config`.
 
@@ -60,9 +68,31 @@ automatically, and you can use it anywhere with `docker run --runtime runsc …`
 
 Ubuntu 24.04+ blocks unprivileged user namespaces unless AppArmor allows them,
 which breaks bubblewrap (and with it Claude Code's sandbox and srt). Stage 65
-tests bwrap and, if needed, installs a profile that grants `userns` to
-`/usr/bin/bwrap` only (`system/apparmor-bwrap`). It doesn't flip the
+tests bwrap and, if needed, loads Ubuntu's own `bwrap-userns-restrict` profile
+(userns for bwrap, but no capabilities for what runs inside). Only where the
+distro has none does it install `system/apparmor-bwrap`. It never flips the
 system-wide `kernel.apparmor_restrict_unprivileged_userns` switch.
+
+## Claude Code's own sandbox
+
+On by default here (`sandbox.enabled`), plus `permissions.deny` Read rules for
+the same credential files (Claude's sandbox doesn't read `~/.srt-settings.json`).
+Two things to know:
+
+- With `allowUnsandboxedCommands` (Claude's default), Claude may ask to run a
+  command outside the sandbox, and in bypass mode (`b-claude`) that's approved
+  automatically. Set `"sandbox": {"allowUnsandboxedCommands": false}` in
+  `~/.claude/settings.json` for a hard boundary (docker and friends then fail
+  inside Claude).
+- Your shells export every key in `~/.config/secrets.env`, so any agent's `env`
+  shows them. Leave keys you don't need there empty.
+
+## mise trust
+
+Only `~/.dotfiles` is trusted. A project's `mise.toml` can run code (`[env]`
+exec templates, `_.source`, hooks), so a freshly cloned repo is untrusted until
+you've read its config: `mise trust` in the repo (the `clone` helper shows the
+file and offers it). Agents that hit "config not trusted" should ask you.
 
 ## Limits, honestly
 

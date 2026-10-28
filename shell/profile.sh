@@ -21,14 +21,16 @@ for d in "$HOME/.local/share/mise/shims" "$HOME/.config/composer/vendor/bin" "$H
     esac
 done
 export PATH
-# PROJECTS_DIR from config.env when set there (empty = ~/projects). Evaluated
-# by a shell, like install.sh does, so quotes, spaces, ~ and $HOME all work.
-PROJECTS_DIR="$(
-    PROJECTS_DIR=''
-    [ -r "$HOME/.dotfiles/config.env" ] && . "$HOME/.dotfiles/config.env" >/dev/null 2>&1
-    printf '%s' "$PROJECTS_DIR"
-)"
+# PROJECTS_DIR as resolved from config.env by the dotfiles stage (one line;
+# never executes config.env here, so a bad edit there can't break logins).
+PROJECTS_DIR=''
+[ -r "$HOME/.config/dotfiles/projects_dir" ] && IFS= read -r PROJECTS_DIR <"$HOME/.config/dotfiles/projects_dir"
 export PROJECTS_DIR="${PROJECTS_DIR:-$HOME/projects}"
+# Flutter publishes no linux-arm64 SDK (see lib/common.sh).
+case "$(uname -s)-$(uname -m)" in Linux-aarch64)
+    case ",${MISE_DISABLE_TOOLS:-}," in *,flutter,*) ;; *) export MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}flutter" ;; esac
+    ;;
+esac
 # Opt out of CLI telemetry (cf, wrangler, Next.js, Homebrew, … honour it).
 export DO_NOT_TRACK=1
 

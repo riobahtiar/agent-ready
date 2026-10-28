@@ -14,7 +14,8 @@ if [[ $OS_KIND == macos ]] && ! have brew; then
 fi
 pkg_refresh
 # A server gets a full upgrade on setup; on a desktop that's your call (update-all).
-if [[ $OS_FAMILY == debian && $PROFILE == server ]]; then pkg_upgrade; fi
+# (Not on --changed: a config tweak shouldn't trigger a full upgrade.)
+if [[ $OS_FAMILY == debian && $PROFILE == server && ${INSTALL_MODE:-all} != changed ]]; then pkg_upgrade; fi
 
 # Language runtimes come from mise (tools stage), not the OS. These are the
 # build deps and ops tools every stack here needs, by their Debian names
@@ -57,7 +58,8 @@ if [[ $LOGIN_SHELL == fish ]] && have fish; then
     fish_bin="$(command -v fish)"
     fish_major="$(fish --version | grep -oE '[0-9]+' | head -1)"
     ((fish_major >= 4)) || warn "fish $(fish --version) is older than 4.x — config targets fish 4"
-    grep -qxF "$fish_bin" /etc/shells || echo "$fish_bin" | as_root tee -a /etc/shells >/dev/null
+    grep -qxF "$fish_bin" /etc/shells || echo "$fish_bin" | as_root tee -a /etc/shells >/dev/null ||
+        warn "couldn't add $fish_bin to /etc/shells (sudo needs a terminal) — chsh will fail until it's there"
     if [[ $OS_KIND == macos ]]; then
         current="$(dscl . -read "/Users/$TARGET_USER" UserShell 2>/dev/null | awk '{print $2}')"
     else
