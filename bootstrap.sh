@@ -144,7 +144,8 @@ fi
 # Full control (config.env, on by default): passwordless sudo from the start,
 # so install.sh never asks. Validated with visudo; a broken file would lock sudo.
 full_control_rule=/etc/sudoers.d/90-dotfiles-full-control
-if grep -qE "^FULL_CONTROL=['\"]?(true|yes|1|on)" "$DOTFILES_DIR/config.env" 2>/dev/null; then
+# (bootstrap.sh is for servers: an empty FULL_CONTROL means on, as in load_config.)
+if grep -qE "^FULL_CONTROL=(['\"]?(true|yes|1|on)|['\"]{0,2}[[:space:]]*(#|$))" "$DOTFILES_DIR/config.env" 2>/dev/null; then
     rule="$(mktemp)"
     printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$TARGET_USER" >"$rule"
     chmod 0440 "$rule"

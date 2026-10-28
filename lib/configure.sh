@@ -128,6 +128,7 @@ configure_wizard() {
     [[ -z $(config_value AGENT_SANDBOX) ]] && toggles+="AGENT_SANDBOX "
     [[ -z $(config_value DOCKER) ]] && toggles+="DOCKER "
     [[ -z $(config_value CLEANUP_TIMER) && $profile == server ]] && toggles+="CLEANUP_TIMER "
+    [[ -z $(config_value FULL_CONTROL) && $profile == server ]] && toggles+="FULL_CONTROL "
     picked="$(ui_multi "Features" "$toggles" "${features[@]}")" || return 1
     for item in "${features[@]}"; do
         v=${item%%|*}

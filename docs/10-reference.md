@@ -20,7 +20,7 @@ stage, because config.env is an input to all of them.
 | `F2B_IGNORE_IPS` | — | 20: never banned (plus loopback, Tailscale, the installing IP) |
 | `TAILSCALE`, `TAILSCALE_SSH`, `TAILSCALE_AUTHKEY` | false, false, — | 75 |
 | `TUNNEL_DEFAULT` | auto | `tunnel` |
-| `FULL_CONTROL` | false (example: true) | 05: passwordless sudo (visudo-checked `/etc/sudoers.d`), Claude `bypassPermissions` + Codex `never`/`danger-full-access` defaults, `b-claude`/`b-codex` skip the prompt; turns `DOCKER_SUDOLESS` on and `AGENT_SANDBOX` off by default |
+| `FULL_CONTROL` | true on server, false on desktop | 05: passwordless sudo (visudo-checked `/etc/sudoers.d`), Claude `bypassPermissions` + Codex `never`/`danger-full-access` defaults, `b-claude`/`b-codex` skip the prompt; turns `DOCKER_SUDOLESS` on and `AGENT_SANDBOX` off by default |
 | `DOCKER` | true | 30 |
 | `DOCKER_SUDOLESS` | true on server, false on desktop | 30: docker group |
 | `GVISOR` | false | 30: runsc runtime |

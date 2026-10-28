@@ -129,7 +129,11 @@ load_config() {
     # FULL_CONTROL: a playground box. Passwordless sudo for TARGET_USER, and
     # Claude + Codex in YOLO mode by default. Outside protection (SSH keys,
     # firewall, fail2ban, dashboard auth) is unchanged.
-    : "${FULL_CONTROL:=false}"
+    # Empty = on for a server (the playground VPS), off for a desktop/laptop.
+    if [[ -z ${FULL_CONTROL:-} ]]; then
+        FULL_CONTROL=false
+        [[ $PROFILE == server ]] && FULL_CONTROL=true
+    fi
     if is_true "$FULL_CONTROL"; then : "${AGENT_SANDBOX:=false}"; else : "${AGENT_SANDBOX:=true}"; fi
     : "${DOCKER:=true}"
     # The docker group is root-equivalent; Omarchy leaves users out on purpose.
