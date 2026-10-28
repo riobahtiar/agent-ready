@@ -31,7 +31,7 @@ update-all -y             # everything, no questions (the default without a TTY)
 update-all agents         # every installed agent CLI
 update-all claude codex   # just these
 update-all tools shell    # groups: system tools agents shell php extras dotfiles
-update-all --check        # what's outdated; changes nothing
+update-all --check        # what's outdated; changes nothing (exits 1 if a check itself fails)
 update-all --quick        # skip apt (no sudo)
 update-all -n             # print the plan
 ```

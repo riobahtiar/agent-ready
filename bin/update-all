@@ -52,22 +52,54 @@ if ((CHECK)); then
     log "Agent CLIs (their updaters check for newer versions themselves)"
     agents_table
     log "System packages ($OS_FAMILY)"
+    # Each checker has its own "nothing to update" exit status; accept only the
+    # documented ones and report anything else, never a silent 0.
+    check_out='' check_err='' check_rc=0
+    capture() {
+        local errf
+        errf="$(mktemp)"
+        check_rc=0
+        check_out="$("$@" 2>"$errf")" || check_rc=$?
+        check_err="$(head -3 "$errf")"
+        rm -f "$errf"
+    }
+    lines() { grep -c "${1:-.}" <<<"$check_out" || true; }
+    n='' tool=''
     case $OS_FAMILY in
-    debian) n="$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)" ;;
+    debian)
+        tool="apt list --upgradable"
+        capture apt list --upgradable
+        ((check_rc == 0)) && n="$(lines '/')" # one "pkg/suite …" line per package
+        ;;
     arch)
-        # "Nothing to update" is exit 2 for checkupdates (pacman-contrib, no
-        # root) and 1 for pacman -Qu: an empty answer, not an error.
-        if have checkupdates; then
-            n="$(checkupdates 2>/dev/null | wc -l || true)"
+        if have checkupdates; then # pacman-contrib: no root, doesn't touch the live db
+            tool=checkupdates
+            capture checkupdates
+            case $check_rc in 0) n="$(lines)" ;; 2) n=0 ;; esac # 2 = no updates, 1 = error
         else
-            n="$(pacman -Qu 2>/dev/null | wc -l || true)"
+            tool="pacman -Qu"
+            capture pacman -Qu
+            # 1 is both "nothing to upgrade" and an error; only stderr tells them apart.
+            if ((check_rc == 0)); then n="$(lines)"; elif ((check_rc == 1)) && [[ -z $check_err ]]; then n=0; fi
         fi
         ;;
-    fedora) n="$(dnf -q check-update 2>/dev/null | grep -c '^[a-zA-Z0-9]' || true)" ;;
-    macos) n="$(brew outdated 2>/dev/null | wc -l)" ;;
-    *) n='?' ;;
+    fedora)
+        tool="dnf check-update"
+        capture dnf -q check-update
+        case $check_rc in 100) n="$(lines '^[[:alnum:]]')" ;; 0) n=0 ;; esac # 100 = updates, 1 = error
+        ;;
+    macos)
+        tool="brew outdated"
+        capture brew outdated
+        ((check_rc == 0)) && n="$(lines)"
+        ;;
+    *) warn "no package manager check for $OS_PRETTY" ;;
     esac
-    echo "    $(xargs <<<"$n") package(s) upgradable"
+    if [[ -z $n ]]; then
+        [[ -n $tool ]] && warn "$tool failed (exit $check_rc)${check_err:+: $check_err}"
+        exit 1
+    fi
+    echo "    $n package(s) upgradable"
     exit 0
 fi
 
