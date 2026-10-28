@@ -66,7 +66,7 @@ _vendor_script() {
     local url=$1 shell=${2:-bash} tmp
     shift $(($# < 2 ? $# : 2))
     tmp="$(mktemp)"
-    if ! curl -fsSL "$url" -o "$tmp"; then
+    if ! fetch "$url" "$tmp"; then
         rm -f "$tmp"
         return 1
     fi

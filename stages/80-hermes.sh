@@ -140,9 +140,9 @@ if is_true "${HERMES_CLOUDFLARE_ONLY:-false}"; then
     # Behind Cloudflare (Access): only Cloudflare may connect, or anyone who
     # knows the VPS IP walks around Access with `curl --resolve`.
     cf_ips="$(
-        curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4
+        fetch https://www.cloudflare.com/ips-v4
         echo
-        curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6
+        fetch https://www.cloudflare.com/ips-v6
     )" || cf_ips=''
     for ip in $cf_ips; do valid_cidr "$ip" && allow+="    allow $ip;"$'\n'; done
     if [[ -z $allow ]]; then

@@ -12,6 +12,10 @@ log "Packages on $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo " (WSL)")"
 if [[ $OS_KIND == macos ]] && ! have brew; then
     die "Homebrew is required on macOS — install it from https://brew.sh, then re-run"
 fi
+# Flaky mirrors: let apt retry failed fetches instead of failing the stage.
+if [[ $OS_FAMILY == debian ]]; then
+    echo 'Acquire::Retries "5";' | as_root tee /etc/apt/apt.conf.d/80-dotfiles-retries >/dev/null
+fi
 pkg_refresh
 # A server gets a full upgrade on setup; on a desktop that's your call (update-all).
 # (Not on --changed: a config tweak shouldn't trigger a full upgrade.)
@@ -48,7 +52,7 @@ if ! have mise; then
     case $OS_FAMILY in
     debian)
         as_root install -d -m 755 /etc/apt/keyrings
-        curl -fsSL https://mise.jdx.dev/gpg-key.pub | as_root tee /etc/apt/keyrings/mise-archive-keyring.asc >/dev/null
+        fetch https://mise.jdx.dev/gpg-key.pub | as_root tee /etc/apt/keyrings/mise-archive-keyring.asc >/dev/null
         echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" |
             as_root tee /etc/apt/sources.list.d/mise.list >/dev/null
         if ! { as_root apt-get update -qq && as_root apt-get install -y -qq mise; }; then

@@ -11,7 +11,10 @@ load_config
 setup_tailscale_linux() {
     # Official script: picks the right repo for Ubuntu/Debian/Arch/Fedora.
     if ! have tailscale; then
-        curl -fsSL https://tailscale.com/install.sh | as_root sh || stage_incomplete "Tailscale install failed"
+        local ts
+        ts="$(mktemp)"
+        if fetch https://tailscale.com/install.sh "$ts" && retry 2 as_root sh "$ts"; then :; else stage_incomplete "Tailscale install failed"; fi
+        rm -f "$ts"
     fi
     if ! have tailscale; then
         warn "tailscale not installed — skipping its setup"

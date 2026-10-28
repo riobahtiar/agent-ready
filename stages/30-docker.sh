@@ -24,7 +24,7 @@ install_debian() {
     [[ $OS_ID == debian ]] && docker_os=debian
     codename="$(ubuntu_codename)"
     as_root install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL "https://download.docker.com/linux/$docker_os/gpg" | as_root tee /etc/apt/keyrings/docker.asc >/dev/null
+    fetch "https://download.docker.com/linux/$docker_os/gpg" | as_root tee /etc/apt/keyrings/docker.asc >/dev/null
     as_root chmod a+r /etc/apt/keyrings/docker.asc
     as_root tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
 Types: deb
@@ -69,7 +69,7 @@ fi
 if is_true "${GVISOR:-false}" && ! have runsc; then
     log "gVisor (runsc): a user-space kernel for untrusted containers (sandbox box)"
     if [[ $OS_FAMILY == debian ]]; then
-        curl -fsSL https://gvisor.dev/archive.key | as_root gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+        fetch https://gvisor.dev/archive.key | as_root gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" |
             as_root tee /etc/apt/sources.list.d/gvisor.list >/dev/null
         as_root apt-get update -qq && apt_install runsc || warn "runsc install failed — sandbox box uses runc"

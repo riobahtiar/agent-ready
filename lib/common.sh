@@ -42,6 +42,35 @@ die() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+# fetch <url> [file] — download with connect/total timeouts and retries.
+# Provider networks stall and drop transfers (seen: getcomposer.org on a
+# fresh VPS); a stalled download is retried, never waited on forever. Always
+# via a temp file, so a retried transfer can't duplicate data on stdout.
+fetch() {
+    local url=$1 out=${2:-} tmp
+    tmp="$(mktemp)"
+    if ! curl -fsSL --connect-timeout 15 --max-time "${FETCH_TIMEOUT:-300}" \
+        --retry 4 --retry-delay 3 --retry-all-errors -o "$tmp" "$url"; then
+        rm -f "$tmp"
+        warn "download failed after retries: $url"
+        return 1
+    fi
+    if [[ -n $out ]]; then mv -f "$tmp" "$out"; else cat "$tmp" && rm -f "$tmp"; fi
+}
+
+# retry <tries> <cmd…> — run a flaky step (an installer that downloads
+# things itself) again after a pause.
+retry() {
+    local tries=$1 n=1
+    shift
+    until "$@"; do
+        ((n >= tries)) && return 1
+        warn "attempt $n of $tries failed — retrying in $((n * 10))s: $1"
+        sleep $((n * 10))
+        n=$((n + 1))
+    done
+}
+
 # with_timeout <secs> <cmd…> — GNU timeout, Homebrew's gtimeout, or (macOS without coreutils) no limit.
 with_timeout() {
     local secs=$1

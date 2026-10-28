@@ -76,15 +76,16 @@ if is_true "$PHP"; then
     install_composer() {
         local tmp expected actual rc=0
         tmp="$(mktemp -d)"
-        expected="$(curl -fsSL --max-time 30 https://composer.github.io/installer.sig)" &&
-            curl -fsSL --max-time 60 https://getcomposer.org/installer -o "$tmp/composer-setup.php" || rc=1
+        expected="$(fetch https://composer.github.io/installer.sig)" &&
+            fetch https://getcomposer.org/installer "$tmp/composer-setup.php" || rc=1
         if ((rc == 0)); then
             actual="$(php -r "echo hash_file('sha384', '$tmp/composer-setup.php');")"
             if [[ $expected != "$actual" ]]; then
                 warn "composer installer checksum mismatch — not running it"
                 rc=1
             else
-                with_timeout 300 as_root php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer || rc=1
+                # The installer downloads composer.phar itself: retry that step too.
+                retry 3 with_timeout 300 as_root php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer || rc=1
             fi
         fi
         rm -rf "$tmp"
