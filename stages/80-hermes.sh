@@ -154,6 +154,24 @@ fi
 for ip in ${HERMES_ALLOW_IPS:-}; do allow+="    allow $ip;"$'\n'; done
 [[ -n $allow ]] && allow+="    deny all;"$'\n'
 
+# Port 80. Behind Cloudflare (HERMES_CLOUDFLARE_ONLY) the dashboard is also
+# served there, so Cloudflare's "Flexible" SSL mode works as-is (Cloudflare
+# speaks HTTPS to the browser and HTTP to us; only Cloudflare's addresses get
+# in). Otherwise port 80 just redirects to HTTPS.
+if is_true "${HERMES_CLOUDFLARE_ONLY:-false}"; then
+    http_block="    location / {
+${allow//    /        }        limit_req zone=cloud_req burst=80 nodelay;
+        proxy_pass http://127.0.0.1:$port;
+        include snippets/cloud-proxy.conf;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }"
+else
+    http_block='    location / { return 301 https://$host$request_uri; }'
+fi
+
 # Never put a dashboard on the internet unless Hermes itself demands a login:
 # it's a web terminal on this machine.
 if [[ $auth_required != true ]]; then
@@ -162,7 +180,7 @@ if [[ $auth_required != true ]]; then
 elif cert_issue "$HERMES_DOMAIN"; then
     # Hermes is optional: a missing certificate (DNS not propagated yet) must
     # not stop the remaining stages. The dashboard still runs on 127.0.0.1.
-    site_write "$HERMES_DOMAIN" hermes PORT="$port" ALLOW="$allow" ||
+    site_write "$HERMES_DOMAIN" hermes PORT="$port" ALLOW="$allow" HTTP="$http_block" ||
         stage_incomplete "nginx rejected the Hermes vhost — previous config kept"
 else
     stage_incomplete "no public dashboard yet — once DNS for $HERMES_DOMAIN points here: ./install.sh hermes"
