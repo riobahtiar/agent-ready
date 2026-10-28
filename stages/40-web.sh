@@ -71,16 +71,30 @@ if is_true "$PHP"; then
     as_root systemctl restart "php$php_ver-fpm"
     ok "PHP $php_ver · fpm socket $(php_fpm_socket)"
 
-    if ! have composer; then
+    # Composer is optional: a slow or broken download (getcomposer.org) leaves
+    # the stage incomplete for --changed to retry, it never stops the install.
+    install_composer() {
+        local tmp expected actual rc=0
         tmp="$(mktemp -d)"
-        expected="$(curl -fsSL https://composer.github.io/installer.sig)"
-        curl -fsSL https://getcomposer.org/installer -o "$tmp/composer-setup.php"
-        actual="$(php -r "echo hash_file('sha384', '$tmp/composer-setup.php');")"
-        [[ $expected == "$actual" ]] || die "composer installer checksum mismatch"
-        as_root php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
+        expected="$(curl -fsSL --max-time 30 https://composer.github.io/installer.sig)" &&
+            curl -fsSL --max-time 60 https://getcomposer.org/installer -o "$tmp/composer-setup.php" || rc=1
+        if ((rc == 0)); then
+            actual="$(php -r "echo hash_file('sha384', '$tmp/composer-setup.php');")"
+            if [[ $expected != "$actual" ]]; then
+                warn "composer installer checksum mismatch — not running it"
+                rc=1
+            else
+                with_timeout 300 as_root php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer || rc=1
+            fi
+        fi
         rm -rf "$tmp"
+        return $rc
+    }
+    if ! have composer && ! install_composer; then
+        stage_incomplete "composer not installed (download failed) — retry later: ./install.sh web"
+    elif have composer; then
+        ok "$(composer --version 2>/dev/null | head -1)"
     fi
-    ok "$(composer --version 2>/dev/null | head -1)"
 fi
 
 as_root install -d -m 2775 -o "$TARGET_USER" -g www-data "$WWW_DIR"
