@@ -15,12 +15,16 @@ agent_define claude \
 # writable (shell snapshots are sourced and project memory is loaded as
 # instructions by later, unjailed sessions). Claude runs on a throwaway config
 # dir instead, seeded with the sign-in and hook-free settings.
+# <dir> comes from bin/sandbox's private_dir: brand new and empty, so nothing
+# in it can be a planted link; -n / noclobber refuse to write through one anyway.
 claude_jail() {
     local dir=$1
-    if [[ -f $HOME/.claude/.credentials.json ]]; then cp -p "$HOME/.claude/.credentials.json" "$dir/"; fi
+    [[ -d $dir && ! -L $dir && -z $(ls -A "$dir") ]] || die "claude_jail: $dir must be a new, empty directory"
+    if [[ -f $HOME/.claude/.credentials.json ]]; then cp -n "$HOME/.claude/.credentials.json" "$dir/.credentials.json"; fi
     if [[ -f $HOME/.claude/settings.json ]] && have jq; then
-        jq 'del(.hooks, .statusLine, .apiKeyHelper)' "$HOME/.claude/settings.json" >"$dir/settings.json"
+        (set -o noclobber && jq 'del(.hooks, .statusLine, .apiKeyHelper)' "$HOME/.claude/settings.json" >"$dir/settings.json")
     fi
+    chmod 600 "$dir"/* 2>/dev/null || true
     echo "CLAUDE_CONFIG_DIR=$dir"
 }
 

@@ -63,17 +63,17 @@ SAFE_ENV=(PATH HOME USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL TZ TMPDIR EDIT
 # Go module cache) hold code that runs UNsandboxed later, so they're
 # read-only inside. Sandboxed commands get throwaway caches instead. (npm and
 # pnpm stay shared: their stores are content-addressed and integrity-checked.)
-# private_dir <name> — a directory only you own: under $XDG_RUNTIME_DIR (0700,
-# per user) when there is one, else a fresh mktemp -d. Never a guessable path
-# in shared /tmp, where someone else could pre-create it or plant a link.
+# private_dir <name> — a FRESH directory only you own (mktemp -d, under
+# $XDG_RUNTIME_DIR when there is one), removed when this command exits. Never
+# reused: it's writable inside the sandbox, so a jailed run could leave links
+# in it that the next run's unsandboxed seeding would write through.
+PRIVATE_DIRS=()
+cleanup_private() { ((${#PRIVATE_DIRS[@]} == 0)) || rm -rf -- "${PRIVATE_DIRS[@]}"; }
+trap cleanup_private EXIT
 private_dir() {
     local base=${XDG_RUNTIME_DIR:-} d
-    if [[ -n $base && -d $base && -O $base && ! -L $base ]]; then
-        d="$base/$1"
-        (umask 077 && mkdir -p "$d")
-    else
-        d="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
-    fi
+    [[ -n $base && -d $base && -O $base && ! -L $base ]] || base=${TMPDIR:-/tmp}
+    d="$(mktemp -d "${base%/}/$1.XXXXXX")" || die "can't create a private directory in $base"
     [[ -d $d && -O $d && ! -L $d ]] || die "unsafe sandbox directory $d"
     chmod 700 "$d"
     printf '%s\n' "$d"
@@ -102,11 +102,15 @@ cmd_run() {
     (($#)) || usage 2
     need_srt
     SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    PRIVATE_DIRS+=("$SANDBOX_CACHE")
     local policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-run.json"
     run_policy "$policy" "$SANDBOX_CACHE"
     local -a env=()
     mapfile -d '' -t env < <(clean_env)
-    exec env -i "${env[@]}" srt --settings "$policy" -- "$@"
+    # Not exec: the private dirs are removed when srt exits.
+    local rc=0
+    env -i "${env[@]}" srt --settings "$policy" -- "$@" || rc=$?
+    exit "$rc"
 }
 
 cmd_agent() {
@@ -140,12 +144,15 @@ cmd_agent() {
         [[ -L $p || $(readlink -f "$p") != "$p" ]] && die "refusing writable state path ${p/#$HOME/\~}: it is (or passes through) a symlink"
     done
     SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    PRIVATE_DIRS+=("$SANDBOX_CACHE")
     state+=" $SANDBOX_CACHE"
     # Agents with a jail hook run on a throwaway config dir instead.
     local -a jail_env=()
     if declare -F "${name}_jail" >/dev/null; then
         local jail
         jail="$(private_dir "sandbox-$name")"
+        PRIVATE_DIRS+=("$jail")
+        # Seeded while it is new and empty, before anything sandboxed runs.
         mapfile -t jail_env < <("${name}_jail" "$jail")
         state+=" $jail"
     fi
@@ -162,7 +169,9 @@ cmd_agent() {
     mapfile -d '' -t env < <(clean_env $(agent_get "$name" env))
     env+=("${jail_env[@]}")
     warn "agent sandboxed: writes only in $(pwd), caches and its own config; network only to the allowlist"
-    exec env -i "${env[@]}" srt --settings "$policy" -- "$(agent_bin "$name")" "$@"
+    local rc=0
+    env -i "${env[@]}" srt --settings "$policy" -- "$(agent_bin "$name")" "$@" || rc=$?
+    exit "$rc"
 }
 
 cmd_box() {
