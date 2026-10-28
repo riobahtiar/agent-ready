@@ -34,6 +34,15 @@ if is_true "$FLUTTER_LINUX_DESKTOP" && [[ $OS_KIND == linux ]]; then
     pkg_install clang cmake ninja-build libgtk-3-dev
 fi
 
+if [[ $OS_KIND == linux ]]; then
+    log "Inside access (FULL_CONTROL=$FULL_CONTROL)"
+    if is_true "$FULL_CONTROL"; then
+        full_control_sudo "$TARGET_USER" on || stage_incomplete "passwordless sudo not set up (see above)"
+    else
+        full_control_sudo "$TARGET_USER" off
+    fi
+fi
+
 log "mise"
 if ! have mise; then
     case $OS_FAMILY in

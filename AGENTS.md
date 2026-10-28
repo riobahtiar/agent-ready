@@ -112,6 +112,8 @@ Drive menus through a pty (python `pty.fork`) to test them.
 ## Don't
 - Don't hand-edit files under `/etc` that a stage manages. Change the source
   here and re-run the stage.
-- Don't add passwordless sudo, public Docker port binds, or anything that opens
-  a port beyond 22/80/443 without a config toggle (see `OPEN_MOSH`).
+- Don't add passwordless sudo except through `FULL_CONTROL` (validated with
+  `visudo`), and no public Docker port binds or ports beyond 22/80/443 without a
+  config toggle (see `OPEN_MOSH`). Full control relaxes the inside, never the
+  outside protection.
 - Don't commit `config.env`, `.state/`, `.dotfiles-backup/` or anything with a token.

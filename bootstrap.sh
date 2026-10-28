@@ -141,11 +141,27 @@ if [[ ! -f $DOTFILES_DIR/config.env ]]; then
     say "Created $DOTFILES_DIR/config.env"
 fi
 
+# Full control (config.env, on by default): passwordless sudo from the start,
+# so install.sh never asks. Validated with visudo; a broken file would lock sudo.
+full_control_rule=/etc/sudoers.d/90-dotfiles-full-control
+if grep -qE "^FULL_CONTROL=['\"]?(true|yes|1|on)" "$DOTFILES_DIR/config.env" 2>/dev/null; then
+    rule="$(mktemp)"
+    printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$TARGET_USER" >"$rule"
+    chmod 0440 "$rule"
+    if visudo -cf "$rule" >/dev/null 2>&1; then
+        install -m 0440 -o root -g root "$rule" "$full_control_rule"
+        say "Passwordless sudo for $TARGET_USER (FULL_CONTROL=true)"
+    else
+        echo "warning: visudo rejected the passwordless-sudo rule — skipped" >&2
+    fi
+    rm -f "$rule"
+fi
+
 if ((RUN_INSTALL)); then
-    # Without a sudo password, hardening (root login off) would leave nobody
+    # Without a way to sudo, hardening (root login off) would leave nobody
     # able to become root. And `curl | bash` has the pipe on stdin: hand
     # install.sh the terminal so its wizard can run.
-    if ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
+    if [[ ! -f $full_control_rule ]] && ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
         echo "not running install.sh: $TARGET_USER has no password yet (sudo would be impossible after hardening)." >&2
         echo "Set one (passwd $TARGET_USER), then: ssh $TARGET_USER@<host> and run ~/.dotfiles/setup-server.sh" >&2
         exit 1

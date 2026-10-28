@@ -43,6 +43,8 @@ done < <(
 # shells: they read this one line instead of executing config.env at every login.
 mkdir -p "$HOME/.config/dotfiles"
 printf '%s\n' "$PROJECTS_DIR" >"$HOME/.config/dotfiles/projects_dir"
+# b-claude / b-codex skip their [y/N] in full-control mode.
+if is_true "$FULL_CONTROL"; then echo true; else echo false; fi >"$HOME/.config/dotfiles/full_control"
 
 log "git identity"
 git_local="$HOME/.config/git/local"

@@ -126,12 +126,16 @@ load_config() {
     : "${TAILSCALE:=false}"
     : "${TAILSCALE_SSH:=false}"
     : "${TUNNEL_DEFAULT:=auto}"
-    : "${AGENT_SANDBOX:=true}"
+    # FULL_CONTROL: a playground box. Passwordless sudo for TARGET_USER, and
+    # Claude + Codex in YOLO mode by default. Outside protection (SSH keys,
+    # firewall, fail2ban, dashboard auth) is unchanged.
+    : "${FULL_CONTROL:=false}"
+    if is_true "$FULL_CONTROL"; then : "${AGENT_SANDBOX:=false}"; else : "${AGENT_SANDBOX:=true}"; fi
     : "${DOCKER:=true}"
     # The docker group is root-equivalent; Omarchy leaves users out on purpose.
     if [[ -z ${DOCKER_SUDOLESS:-} ]]; then
         DOCKER_SUDOLESS=false
-        [[ $PROFILE == server ]] && DOCKER_SUDOLESS=true
+        [[ $PROFILE == server ]] || is_true "$FULL_CONTROL" && DOCKER_SUDOLESS=true
     fi
     : "${GVISOR:=false}"
     : "${PHP:=true}"
@@ -289,6 +293,34 @@ env_set() {
     ' "$([[ -f $file ]] && echo "$file" || echo "$file.missing")" >"$tmp"
     rm -f "$file.missing"
     atomic_replace "$file" "$tmp"
+}
+
+# full_control_sudo <user> <on|off> — passwordless sudo for <user> via
+# /etc/sudoers.d, validated with visudo first: a broken sudoers file would
+# lock everyone out of sudo. Linux only. Run as root.
+FULL_CONTROL_SUDOERS=/etc/sudoers.d/90-dotfiles-full-control
+full_control_sudo() {
+    local user=$1 state=$2 tmp
+    [[ $(uname -s) == Linux ]] || return 0
+    if [[ $state != on ]]; then
+        if [[ -e $FULL_CONTROL_SUDOERS ]]; then rm -f "$FULL_CONTROL_SUDOERS" && step "passwordless sudo removed"; fi
+        return 0
+    fi
+    [[ $user =~ ^[a-z_][a-z0-9_-]*$ ]] || die "full_control_sudo: bad user name '$user'"
+    tmp="$(mktemp)"
+    printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$user" >"$tmp"
+    chmod 0440 "$tmp"
+    if ! visudo -cf "$tmp" >/dev/null 2>&1; then
+        rm -f "$tmp"
+        warn "visudo rejected the passwordless-sudo rule — sudo left as it was"
+        return 1
+    fi
+    if cmp -s "$tmp" "$FULL_CONTROL_SUDOERS" 2>/dev/null; then
+        rm -f "$tmp"
+    else
+        install -m 0440 -o root -g root "$tmp" "$FULL_CONTROL_SUDOERS" && rm -f "$tmp"
+        ok "passwordless sudo for $user (FULL_CONTROL)"
+    fi
 }
 
 # stage_incomplete <reason> — inside a stage: finish, but don't record the stage

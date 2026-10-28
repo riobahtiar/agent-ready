@@ -71,7 +71,20 @@ always pass arguments**; a missing one fails fast instead of prompting.
 - Never read or copy `~/.ssh`, `~/.aws`, `~/.config/rclone`, `~/.cloudflared`
   or the secret files above, even when you could.
 
+## Full control (when `sudo -n true` succeeds)
+The owner runs this box as a playground: passwordless sudo, Claude and Codex in
+YOLO mode. You may install packages, edit system config, restart services and
+use Docker freely. What you must NOT do, because it is what keeps outsiders out:
+- weaken SSH (password login, root login, `sshd_config.d/10-cloud.conf`), or
+  remove `~/.ssh/authorized_keys` entries;
+- disable or loosen ufw / fail2ban, or open ports beyond 22/80/443;
+- publish Docker ports on `0.0.0.0`, or put anything on the internet without
+  TLS + auth (the Hermes dashboard is a web terminal);
+- start public tunnels without asking (see `tunnel` above).
+Prefer changing `~/.dotfiles` + re-running a stage over hand-editing `/etc`
+files a stage manages (they'd be overwritten).
+
 ## Things that need a human
-- `sudo` asks for a password. If a step needs root, stop and tell the user the exact command.
-- Don't edit `~/.dotfiles` unless asked. It's a git repo of this machine's config. Propose the change instead.
-- Don't reboot, and don't restart `nginx`, `docker` or `hermes-*` services, unless the user asked you to.
+- Without full control, `sudo` asks for a password: stop and tell the user the exact command.
+- Don't reboot unless asked: other agents' sessions die with it.
+- Ask before deleting data you didn't create (databases, volumes, other worktrees).

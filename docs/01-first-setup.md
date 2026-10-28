@@ -45,8 +45,9 @@ ssh rio@<vps-ip>
 
 The first run asks your settings (name, email, profile, which agents, Hermes,
 Tailscale, sandboxing, default tunnel…), writes `config.env`, and offers
-**Everything in order**. It asks for your sudo password once, and the Hermes
-stage asks for a dashboard password (twice, 12+ characters).
+**Everything in order**. With `FULL_CONTROL=true` (the default for this VPS)
+sudo never asks for a password and Claude/Codex start in YOLO mode; the
+Hermes stage still asks for a dashboard password (twice, 12+ characters).
 
 It takes 15–25 minutes, mostly mise downloads and Flutter. If a stage fails,
 fix what it printed and run `./install.sh --changed`: completed stages are

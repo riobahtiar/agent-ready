@@ -20,10 +20,11 @@ stage, because config.env is an input to all of them.
 | `F2B_IGNORE_IPS` | — | 20: never banned (plus loopback, Tailscale, the installing IP) |
 | `TAILSCALE`, `TAILSCALE_SSH`, `TAILSCALE_AUTHKEY` | false, false, — | 75 |
 | `TUNNEL_DEFAULT` | auto | `tunnel` |
+| `FULL_CONTROL` | false (example: true) | 05: passwordless sudo (visudo-checked `/etc/sudoers.d`), Claude `bypassPermissions` + Codex `never`/`danger-full-access` defaults, `b-claude`/`b-codex` skip the prompt; turns `DOCKER_SUDOLESS` on and `AGENT_SANDBOX` off by default |
 | `DOCKER` | true | 30 |
 | `DOCKER_SUDOLESS` | true on server, false on desktop | 30: docker group |
 | `GVISOR` | false | 30: runsc runtime |
-| `AGENT_SANDBOX` | true | 70: Claude Code `sandbox.enabled` (only if unset) |
+| `AGENT_SANDBOX` | true (false with `FULL_CONTROL`) | 70: Claude Code `sandbox.enabled` (only if unset) |
 | `ACME_EMAIL` | — | 40, 80, `site add` |
 | `PHP`, `WWW_DIR` | true, /srv/www | 40 |
 | `PROJECTS_DIR` | ~/projects | 05, prompt, cleanup |
@@ -120,8 +121,9 @@ optional `<id>_stop`. Helpers: `tunnel_bg <id> <port> <url-regex> <cmd…>`,
   would otherwise be public. nginx is the only public entry point, and `doctor` flags the rest.
 - **zram + swapfile on the server.** Seven agents plus LSPs plus a build don't
   fit in 6 GB. zram absorbs spikes; Hermes' dashboard is capped at 1 GB.
-- **No auto-reboot, no passwordless sudo.** Agents may run in bypass mode;
-  passwordless sudo would hand them root.
+- **No auto-reboot. Passwordless sudo only by choice.** `FULL_CONTROL=true`
+  hands agents root on purpose (a playground box); the outside protection
+  (SSH keys, firewall, fail2ban, dashboard auth) never depends on it.
 - **Per-file symlinks**, so fisher, agents and installers write next to their
   configs without dirtying the repo. Vendor installers run with `SHELL=bash` so
   their PATH lines land in `~/.bashrc`.

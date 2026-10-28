@@ -19,8 +19,19 @@ function __ai_bypass_read_consent --description "Read bypass consent from the TT
         return 0
     end
 
+    # Full-control mode (FULL_CONTROL=true in ~/.dotfiles/config.env): Claude
+    # and Codex get their bypass without asking. The others still ask.
+    if contains -- $name claude codex; and test -r ~/.config/dotfiles/full_control
+        read -l mode <~/.config/dotfiles/full_control
+        if test "$mode" = true
+            printf 'y\n'
+            return 0
+        end
+    end
+
     # Prefer the controlling terminal so agent stdin stays intact for pipes.
-    if test -c /dev/tty -a -r /dev/tty
+    # (-c/-r are true even with no controlling terminal: try opening it.)
+    if command sh -c ': </dev/tty' 2>/dev/null
         set -l answer ""
         read -P "Run $name with permission bypass? [y/N] " answer </dev/tty
         or true

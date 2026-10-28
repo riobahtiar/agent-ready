@@ -39,8 +39,13 @@ claude_update() { claude update; }
 claude_configure() {
     have jq || return 0
     local settings="$HOME/.claude/settings.json" tmp
-    local filter='.cleanupPeriodDays //= 30
-        | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
+    local filter='.cleanupPeriodDays //= 30'
+    if is_true "${FULL_CONTROL:-false}"; then
+        # Full control: start in bypass mode (YOLO); no credential deny rules.
+        filter+=' | .permissions.defaultMode //= "bypassPermissions"'
+    else
+        filter+=' | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
+    fi
     is_true "${AGENT_SANDBOX:-true}" && filter+=' | .sandbox.enabled //= true'
     mkdir -p "$HOME/.claude"
     # Edit the real file if settings.json is a link (managed elsewhere).

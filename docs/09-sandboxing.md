@@ -84,9 +84,13 @@ tests bwrap and, if needed, loads Ubuntu's own `bwrap-userns-restrict` profile
 distro has none does it install `system/apparmor-bwrap`. It never flips the
 system-wide `kernel.apparmor_restrict_unprivileged_userns` switch.
 
+With `FULL_CONTROL=true` (playground mode) none of this is on by default:
+agents are meant to run the box. `sandbox run` / `sandbox agent` still work
+when you want them for one untrusted thing.
+
 ## Claude Code's own sandbox
 
-On by default here (`sandbox.enabled`), plus `permissions.deny` Read rules for
+On by default unless `FULL_CONTROL=true` (`sandbox.enabled`), plus `permissions.deny` Read rules for
 the same credential files (Claude's sandbox doesn't read `~/.srt-settings.json`).
 Two things to know:
 

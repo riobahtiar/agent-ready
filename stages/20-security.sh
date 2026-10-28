@@ -32,7 +32,8 @@ if is_true "$SSH_HARDEN" || [[ $SSH_HARDEN == force ]]; then
         is_true "$SSH_DISABLE_ROOT" && root_login=no
         # Root SSH is the way back in when the user can't sudo: keep it (key only)
         # until the user has a password.
-        if [[ $root_login == no ]] && ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
+        if [[ $root_login == no ]] && ! as_root test -f "$FULL_CONTROL_SUDOERS" &&
+            ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
             root_login=prohibit-password
             warn "$TARGET_USER has no password (no sudo) — keeping root key login; set one with: sudo passwd $TARGET_USER"
         fi

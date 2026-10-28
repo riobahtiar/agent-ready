@@ -29,7 +29,8 @@ adjusted where noted) · ➖ skipped on purpose · ⚙️ opt-in toggle in confi
 | zram + swapfile, sysctl, limits, journald caps | ✅ | ➖ | ➖ | Tuned for 6 GB and many agents |
 | Unattended security upgrades | ✅ (no auto-reboot) | ➖ | ➖ | Arch has no safe unattended upgrades |
 | Lingering user services | ✅ | ➖ | ➖ | Agents/timers keep running after logout |
-| SSH hardening (key-only, no root) | ✅ | ➖ | ➖ | Skipped if you have no authorized_keys |
+| SSH hardening (key-only, no root) | ✅ | ➖ | ➖ | Password login goes off once a key login was seen |
+| Full control inside (passwordless sudo, Claude + Codex YOLO) | ✅ `FULL_CONTROL=true` | ⚙️ | ⚙️ (agent defaults only; no sudoers change on macOS) | Outside protection unchanged |
 | Firewall | ✅ ufw: 22, 80, 443 (+ mosh ⚙️) | ☑️ Omarchy's ufw untouched | ➖ macOS firewall untouched | |
 | fail2ban | ✅ sshd + recidive | ➖ | ➖ | |
 

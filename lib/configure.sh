@@ -103,6 +103,7 @@ configure_wizard() {
     config_set "$CONFIG_FILE" AGENTS "$(tr '\n' ' ' <<<"$picked" | sed 's/ *$//')"
 
     local -a features=(
+        "FULL_CONTROL|Full control inside: passwordless sudo · Claude + Codex in YOLO mode (outside stays locked)"
         "TAILSCALE|Tailscale: private network to your laptop/phone + private dev URLs"
         "TAILSCALE_SSH|Tailscale SSH (log in over the tailnet without keys)"
         "DOCKER|Docker Engine (Linux; off if you use Podman or Docker Desktop)"

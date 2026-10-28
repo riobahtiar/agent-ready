@@ -162,6 +162,6 @@ re-run everything silently; say which mode you mean.
 | `clone <url\|owner/repo> [dir]` | Clone into `~/projects` and cd |
 | `ports [port]` | Listening TCP ports |
 | `mkcd`, `path-list`, `fish-reload` | Small conveniences |
-| `b-claude`, `b-codex`, `b-opencode`, `b-omp`, `b-grok`, `b-hermes` | Launch with the tool's official bypass flags after a `[y/N]` |
+| `b-claude`, `b-codex`, `b-opencode`, `b-omp`, `b-grok`, `b-hermes` | Launch with the tool's official bypass flags after a `[y/N]` (with `FULL_CONTROL`, Claude and Codex skip the question, and plain `claude`/`codex` already start in YOLO mode) |
 
 Abbreviations: [04 Shell and prompt](04-shell-and-prompt.md#abbreviations).
