@@ -11,10 +11,13 @@ load_config
 # key_login_seen — the journal (or auth.log) shows this user logging in with a
 # key. Until then, turning passwords off could lock them out.
 key_login_seen() {
-    local pattern="Accepted publickey for $TARGET_USER from"
-    # Only sshd's own messages count (sudo logs command lines, patterns included).
-    as_root journalctl -q --no-pager --since=-90d _COMM=sshd _COMM=sshd-session --grep "$pattern" 2>/dev/null | grep -q . && return 0
-    as_root grep -qs "$pattern" /var/log/auth.log /var/log/auth.log.1 /var/log/secure 2>/dev/null
+    # A plain user name only, so it can't carry regex syntax into the pattern.
+    [[ $TARGET_USER =~ ^[a-z_][a-z0-9_-]*$ ]] || return 1
+    local pattern="^Accepted publickey for $TARGET_USER from [0-9A-Fa-f.:]+ port [0-9]+ "
+    # Only sshd's own messages, logged by root: _UID is set by journald itself,
+    # so an unprivileged process (or sudo echoing a command line) can't fake it.
+    as_root journalctl -q --no-pager -o cat --since=-90d _UID=0 _COMM=sshd _COMM=sshd-session --grep "$pattern" 2>/dev/null | grep -q . && return 0
+    as_root grep -qsE "sshd(-session)?\[[0-9]+\]: ${pattern#^}" /var/log/auth.log /var/log/auth.log.1 /var/log/secure 2>/dev/null
 }
 # ssh_ports — every port sshd (or ssh.socket on 26.04) listens on.
 ssh_ports() {
