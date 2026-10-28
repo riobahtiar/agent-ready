@@ -75,7 +75,11 @@ function easy_eel_override_greeting --description "SSH login: box summary; herdr
     end
     # Only over SSH: on a laptop every new terminal tab is a login shell.
     status is-login; and set -q SSH_TTY; or return
-    __cloud_status_line
+    if command -q motd
+        command motd
+    else
+        __cloud_status_line
+    end
 end
 
 # ─── Right prompt ───

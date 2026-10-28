@@ -171,6 +171,8 @@ load_config() {
     fi
     if is_true "$FULL_CONTROL"; then : "${AGENT_SANDBOX:=false}"; else : "${AGENT_SANDBOX:=true}"; fi
     : "${DOCKER:=true}"
+    : "${LOGIN_GREETING:=true}"
+    : "${CLOUD_INIT_LOCK:=true}"
     # The docker group is root-equivalent; Omarchy leaves users out on purpose.
     if [[ -z ${DOCKER_SUDOLESS:-} ]]; then
         DOCKER_SUDOLESS=false

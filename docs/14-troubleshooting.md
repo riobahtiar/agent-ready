@@ -8,6 +8,8 @@ Start with `doctor` and `./install.sh --status`: most problems show up in one of
 | A stage says "incomplete" | It finished but something was left (a tool, DNS, a login); fix what it printed, `./install.sh --changed` retries it |
 | `mise: config not trusted` in a project | Expected for cloned repos: read its `mise.toml`, then `mise trust` |
 | Docker "NOT restarted" | Containers were running: `sudo systemctl restart docker` when convenient |
+| The provider's panel can't reset the password / inject keys | cloud-init is locked after first boot (`CLOUD_INIT_LOCK`): set it to false and `./install.sh system`, use the panel, then lock again |
+| `cloud-init-main.service` failed | The provider's boot commands failed (Contabo's `pkill -HUP sshd` on 26.04); `./install.sh system` locks cloud-init |
 | A stage failed mid-install | Fix what it printed, then `./install.sh --changed`. Stages that completed are skipped |
 | `setup already ran here` | It's the guard: pick `--changed`, `--all` or `--renew` (or run it in a terminal for the menu) |
 | mise: `API rate limit exceeded` | Set `GITHUB_TOKEN` in config.env, then `./install.sh tools` |

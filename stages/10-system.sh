@@ -78,6 +78,58 @@ else
     step "no unattended upgrades on $OS_FAMILY — run update-all regularly"
 fi
 
+log "Login greeting (LOGIN_GREETING=$LOGIN_GREETING)"
+# One greeting of our own (bin/motd, shown by the shell on SSH login) instead
+# of Ubuntu's MOTD scripts, motd-news, ESM adverts and the provider banner.
+if [[ $OS_FAMILY == debian ]]; then
+    if is_true "$LOGIN_GREETING"; then
+        # Ubuntu 26.04 dropped last/lastlog; wtmpdb records logins for "Last login".
+        pkg_install wtmpdb libpam-wtmpdb
+        # dpkg-statoverride: the mode survives package upgrades (a chmod wouldn't).
+        # (A symlinked entry, e.g. 50-landscape-sysinfo, runs if its target is
+        # executable: override the target.)
+        for f in /etc/update-motd.d/*; do
+            [[ -e $f ]] || continue
+            [[ -L $f ]] && f="$(readlink -f "$f")"
+            [[ -f $f ]] || continue
+            dpkg-statoverride --list "$f" >/dev/null 2>&1 || as_root dpkg-statoverride --update --add root root 0644 "$f"
+        done
+        as_root sed -i 's/^ENABLED=1/ENABLED=0/' /etc/default/motd-news 2>/dev/null || true
+        # The provider's static banner (Contabo & co.), kept once as a backup.
+        if as_root test -s /etc/motd && ! as_root grep -q 'Managed by ~/.dotfiles' /etc/motd; then
+            as_root test -e /etc/motd.dotfiles-orig || as_root cp -p /etc/motd /etc/motd.dotfiles-orig
+            : | as_root tee /etc/motd >/dev/null
+        fi
+        as_root rm -f /run/motd.dynamic
+        ok "Ubuntu/provider MOTD off — greeting: bin/motd (provider banner kept in /etc/motd.dotfiles-orig)"
+    else
+        for f in $(dpkg-statoverride --list 2>/dev/null | awk '$4 ~ "^/etc/update-motd.d/" || $4 ~ "landscape-sysinfo" {print $4}'); do
+            as_root dpkg-statoverride --remove "$f" >/dev/null && as_root chmod 0755 "$f"
+        done
+        if as_root test -e /etc/motd.dotfiles-orig; then as_root mv -f /etc/motd.dotfiles-orig /etc/motd; fi
+        as_root sed -i 's/^ENABLED=0/ENABLED=1/' /etc/default/motd-news 2>/dev/null || true
+        step "LOGIN_GREETING=false — Ubuntu's MOTD restored"
+    fi
+fi
+
+# Providers' cloud-init user-data runs on every boot. Contabo's re-enables
+# root SSH login in sshd_config each boot (and fails on 26.04, leaving a failed
+# unit). After the first boot it has nothing left to do: lock it. Undo with
+# CLOUD_INIT_LOCK=false (provider panel features — password reset, key
+# injection — need cloud-init).
+if have cloud-init && [[ -d /var/lib/cloud/instance ]]; then
+    if is_true "$CLOUD_INIT_LOCK"; then
+        if [[ ! -e /etc/cloud/cloud-init.disabled ]]; then
+            echo '# Managed by ~/.dotfiles (CLOUD_INIT_LOCK=true): first-boot setup is done' | as_root tee /etc/cloud/cloud-init.disabled >/dev/null
+            ok "cloud-init locked after first boot (provider boot commands no longer run)"
+        fi
+        as_root systemctl reset-failed 'cloud-init*' 2>/dev/null || true
+    elif as_root grep -qs 'Managed by ~/.dotfiles' /etc/cloud/cloud-init.disabled; then
+        as_root rm -f /etc/cloud/cloud-init.disabled
+        step "cloud-init unlocked (CLOUD_INIT_LOCK=false)"
+    fi
+fi
+
 log "Directories & user services"
 as_root install -d -m 755 -o "$TARGET_USER" -g www-data "$WWW_DIR" 2>/dev/null ||
     as_root install -d -m 755 -o "$TARGET_USER" "$WWW_DIR"

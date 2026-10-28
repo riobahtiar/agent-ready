@@ -60,9 +60,13 @@ set -g CLOUD_PROMPT_RIGHT status duration git worktree bun go   # in prompt.fish
 
 ### Greeting and title
 
-- On **SSH login** you get one summary line: host, load, memory, disk,
-  running containers, which agents are running, and a reboot warning when one
-  is pending. herdr panes, subshells and local terminals stay quiet.
+- On **SSH login** you get the greeting from `bin/motd` instead of Ubuntu's
+  MOTD and the provider's banner (stage 10 turns those off, `LOGIN_GREETING`):
+  previous login (time, IP), uptime and boot time, pending/security updates and
+  the last apt run, load, memory and swap, disk, Docker containers, running
+  agents, fail2ban bans and the firewall, plus warnings for a pending reboot,
+  failed services or a nearly full disk. Run `motd` any time to see it again.
+  herdr panes, subshells and local terminals stay quiet.
   `set -g CLOUD_GREETING eel` brings back the theme's ocean one-liners;
   `off` disables it.
 - The terminal or herdr tab title is `command · host: dir`.

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# motd — the login greeting: who logged in last, uptime, updates, resources,
+# containers, agents, security. Shown by fish and bash on SSH logins (replaces
+# Ubuntu's and the provider's MOTD, see stages/10-system.sh). Fast by design:
+# no network, no apt, everything optional fails quietly.
+#
+#   motd            print it
+set -uo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+
+[[ -t 1 ]] || C_BOLD='' C_DIM='' C_RESET='' C_YELLOW='' C_BLUE=''
+row() { printf '  %s%-11s%s %s\n' "$C_DIM" "$1" "$C_RESET" "$2"; }
+note() { printf '  %s! %s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
+# ago <epoch> — "3 h ago", "2 d ago"
+ago() {
+    local s=$(($(date +%s) - $1))
+    if ((s < 3600)); then echo "$((s / 60)) min ago"; elif ((s < 172800)); then echo "$((s / 3600)) h ago"; else echo "$((s / 86400)) d ago"; fi
+}
+gb() { awk -v k="$1" 'BEGIN { printf "%.1f", k / 1048576 }'; }
+# Root-only facts when sudo needs no password (FULL_CONTROL); skipped otherwise.
+asroot() { if is_root; then "$@"; else sudo -n "$@" 2>/dev/null; fi; }
+
+user=$(id -un)
+. /etc/os-release 2>/dev/null || true
+printf '\n  %s%s%s  %s·  %s  ·  kernel %s%s\n\n' "$C_BOLD$C_BLUE" "$(hostname -s)" "$C_RESET" "$C_DIM" \
+    "${PRETTY_NAME:-$(uname -s)}" "$(uname -r | cut -d- -f1-2)" "$C_RESET"
+
+# ── Last login: the previous session (wtmpdb, Ubuntu 26.04's last/lastlog) ──
+if have wtmpdb; then
+    prev="$(wtmpdb last -n 2 "$user" 2>/dev/null | awk 'NF && $1 != "wtmpdb" && !/^$/' | sed -n 2p)"
+    if [[ -n $prev ]]; then
+        # rio  ssh  203.0.113.9  Thu Oct 29 00:55 - 01:10  (00:15)
+        from="$(awk '{print $3}' <<<"$prev")"
+        when="$(awk '{print $4, $5, $6, $7}' <<<"$prev")"
+        row "Last login" "$when from $from"
+    else
+        row "Last login" "first login recorded here"
+    fi
+fi
+
+# ── Uptime ──
+if [[ -r /proc/uptime ]]; then
+    up=$(cut -d. -f1 /proc/uptime)
+    boot=$(($(date +%s) - up))
+    d=$((up / 86400)) h=$((up % 86400 / 3600)) m=$((up % 3600 / 60))
+    span="${m} min"
+    ((h || d)) && span="${h} h ${m} min"
+    ((d)) && span="${d} d ${h} h"
+    row "Uptime" "$span  ${C_DIM}(booted $(date -d "@$boot" '+%a %d %b %H:%M' 2>/dev/null))${C_RESET}"
+fi
+
+# ── Updates ──
+updates=''
+if [[ -r /var/lib/update-notifier/updates-available ]]; then
+    n="$(grep -oE '^[0-9]+ updates? can be applied' /var/lib/update-notifier/updates-available | grep -oE '^[0-9]+')"
+    sec="$(grep -oE '^[0-9]+ of these updates? (is|are) a?n? ?standard security' /var/lib/update-notifier/updates-available | grep -oE '^[0-9]+')"
+    updates="${n:-0} pending${sec:+ · $sec security}"
+fi
+if [[ -r /var/log/apt/history.log ]]; then
+    last_apt="$(grep -E '^Start-Date' /var/log/apt/history.log | tail -1 | sed 's/^Start-Date: *//')"
+    [[ -n $last_apt ]] && updates="${updates:+$updates · }last apt run $(date -d "$last_apt" '+%d %b %H:%M' 2>/dev/null || echo "$last_apt")"
+fi
+if systemctl is-enabled unattended-upgrades >/dev/null 2>&1; then updates="${updates:+$updates · }auto security updates on"; fi
+[[ -n $updates ]] && row "Updates" "$updates"
+
+# ── Resources ──
+if [[ -r /proc/loadavg ]]; then
+    read -r l1 l5 l15 _ </proc/loadavg
+    row "Load" "$l1 $l5 $l15  ${C_DIM}on $(nproc) cores${C_RESET}"
+    mt=$(awk '/^MemTotal/ {print $2}' /proc/meminfo) ma=$(awk '/^MemAvailable/ {print $2}' /proc/meminfo)
+    st=$(awk '/^SwapTotal/ {print $2}' /proc/meminfo) sf=$(awk '/^SwapFree/ {print $2}' /proc/meminfo)
+    row "Memory" "$(gb $((mt - ma))) / $(gb "$mt") GB used  ·  swap $(gb $((st - sf))) / $(gb "$st") GB"
+fi
+row "Disk /" "$(df -h / | awk 'NR==2 {print $5 " of " $2 " used  ·  " $4 " free"}')"
+
+# ── Docker, agents ──
+if have docker && [[ -w /var/run/docker.sock ]]; then
+    running=$(with_timeout 2 docker ps -q 2>/dev/null | wc -l | xargs)
+    stopped=$(with_timeout 2 docker ps -q --filter status=exited 2>/dev/null | wc -l | xargs)
+    row "Docker" "$running running${stopped:+ · $stopped stopped}"
+fi
+agents=''
+for name in claude codex opencode omp grok muse hermes; do
+    c=$(ps -u "$user" -o comm= 2>/dev/null | sed 's|.*/||' | grep -cx "$name" || true)
+    ((c == 1)) && agents+="$name  "
+    ((c > 1)) && agents+="$name ×$c  "
+done
+row "Agents" "${agents:-${C_DIM}none running${C_RESET}}"
+
+# ── Security (root-only facts; shown when sudo needs no password) ──
+if banned="$(asroot fail2ban-client status sshd 2>/dev/null | awk -F: '/Currently banned/ {gsub(/[[:space:]]/, "", $2); print $2}')" && [[ -n $banned ]]; then
+    fw="$(asroot ufw status 2>/dev/null | head -1 | awk '{print $2}')"
+    row "Security" "fail2ban: $banned banned now${fw:+  ·  firewall $fw}"
+fi
+
+# ── Things that want attention ──
+echo
+[[ -f /var/run/reboot-required ]] && note "reboot required ($(paste -sd' ' /var/run/reboot-required.pkgs 2>/dev/null | cut -c1-50)) — when agents are idle: sudo reboot"
+failed="$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | paste -sd' ')"
+[[ -n $failed ]] && note "failed services: $failed — see: doctor"
+df -P / | awk 'NR==2 {gsub("%", "", $5); exit !($5 >= 85)}' && note "disk almost full — run: cleanup"
+printf '  %smenu: vps · attach: herdr · health: doctor · update: update-all%s\n\n' "$C_DIM" "$C_RESET"
