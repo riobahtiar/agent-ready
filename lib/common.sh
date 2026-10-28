@@ -75,6 +75,12 @@ retry() {
 with_timeout() {
     local secs=$1
     shift
+    # timeout(1) execs a program: a shell function (as_root, run_as_user) would
+    # fail instantly with "No such file". Run those as they are.
+    if declare -F "$1" >/dev/null; then
+        "$@"
+        return
+    fi
     if have timeout; then
         timeout "$secs" "$@"
     elif have gtimeout; then

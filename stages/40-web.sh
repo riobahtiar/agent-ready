@@ -85,7 +85,8 @@ if is_true "$PHP"; then
                 rc=1
             else
                 # The installer downloads composer.phar itself: retry that step too.
-                retry 3 with_timeout 300 as_root php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer || rc=1
+                # (This stage runs as root; `timeout` can't run shell functions like as_root.)
+                retry 3 with_timeout 300 php "$tmp/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer || rc=1
             fi
         fi
         rm -rf "$tmp"
