@@ -81,7 +81,11 @@ set_env HERMES_DASHBOARD_BASIC_AUTH_USERNAME "$HERMES_DASHBOARD_USER"
 if [[ -z $(get_env HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH) || ${HERMES_RESET_PASSWORD:-0} == 1 ]]; then
     password="${HERMES_DASHBOARD_PASSWORD:-}"
     if [[ -z $password ]]; then
-        has_tty || die "No TTY to prompt for the dashboard password — set HERMES_DASHBOARD_PASSWORD in config.env"
+        # Unattended run: the rest of the install goes on; Hermes waits for you.
+        if ! has_tty; then
+            stage_incomplete "no dashboard password yet — at a terminal run: ~/.dotfiles/install.sh hermes"
+            exit 0
+        fi
         read -r -s -p "Hermes dashboard password for '$HERMES_DASHBOARD_USER' (min 12 chars): " password </dev/tty && echo >&2
         read -r -s -p "Repeat: " again </dev/tty && echo >&2
         [[ $password == "$again" ]] || die "passwords differ"
