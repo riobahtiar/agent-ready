@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# tunnel — share a local dev server (127.0.0.1:<port>) through a tunnel.
+#
+#   tunnel                          at a terminal: pick the port, then the provider
+#   tunnel <port> [provider] [host] start; without a provider: TUNNEL_DEFAULT, else the first
+#                                   ready PRIVATE one. Public providers ask first (-y to skip).
+#   tunnel ls                       running tunnels and their URLs
+#   tunnel stop <port|all> [provider]
+#   tunnel providers                every provider: reach, ready or what's missing
+#   tunnel logs <port> [provider]   follow a background tunnel's log
+#
+# Providers live in ~/.dotfiles/tunnels.d (one file each). docs/07-networking.md
+# explains which to use when.
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+source "$DOTFILES_DIR/lib/net.sh"
+source "$DOTFILES_DIR/lib/tunnels.sh"
+load_config
+
+usage() {
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+cmd_providers() {
+    local id why
+    printf '%-11s %-10s %-6s %s\n' PROVIDER REACH READY DESCRIPTION
+    for id in "${TUNNEL_IDS[@]}"; do
+        if why="$("${id}_ready" 2>&1)"; then
+            printf '%-11s %-10s %s%-6s%s %s\n' "$id" "$(tunnel_get "$id" reach)" "$C_GREEN" yes "$C_RESET" "$(tunnel_get "$id" title)"
+        else
+            printf '%-11s %-10s %s%-6s%s %s\n' "$id" "$(tunnel_get "$id" reach)" "$C_YELLOW" no "$C_RESET" "$(tunnel_get "$id" title)"
+            printf '%-29s %s↳ %s%s\n' '' "$C_DIM" "${why:-$(tunnel_get "$id" setup)}" "$C_RESET"
+        fi
+    done
+}
+
+cmd_ls() {
+    local rows
+    rows="$(tunnels_active)"
+    if [[ -z $rows ]]; then
+        step "no tunnels running — start one with: tunnel <port>"
+        return 0
+    fi
+    printf '%-11s %-6s %s\n' PROVIDER PORT URL
+    awk '{ printf "%-11s %-6s %s\n", $1, $2, $3 }' <<<"$rows"
+}
+
+cmd_start() {
+    local port=$1 id=${2:-} host=${3:-}
+    [[ $port =~ ^[0-9]+$ ]] || die "not a port: $port"
+    if [[ -z $id ]]; then
+        if [[ $TUNNEL_DEFAULT != auto ]]; then
+            id=$TUNNEL_DEFAULT
+        else
+            id="$(tunnel_auto)" || die "no provider is ready — see: tunnel providers"
+        fi
+    fi
+    tunnel_known "$id" || die "unknown provider '$id' — see: tunnel providers"
+    # The Hermes dashboard is a web terminal: never tunnel around its nginx allowlist.
+    [[ $port == "${HERMES_DASHBOARD_PORT:-9119}" ]] &&
+        die "port $port is the Hermes dashboard — it's published (with its allowlist) by nginx, not by tunnels"
+    local why
+    why="$("${id}_ready" 2>&1)" || die "$id isn't ready: ${why:-$(tunnel_get "$id" setup)}"
+    net_answers "$port" || warn "nothing answers on 127.0.0.1:$port yet — the tunnel will show errors until it does"
+    if [[ $(tunnel_get "$id" reach) == public ]]; then
+        warn "public: anyone with the URL reaches 127.0.0.1:$port — no auth unless your app has it"
+        if ((! YES)); then
+            ui_interactive || die "public tunnel needs confirmation: run it at a terminal, or add -y"
+            ASSUME_YES=0 ui_confirm "Expose 127.0.0.1:$port to the internet via $id?" || die "cancelled"
+        fi
+    fi
+    log "$id → 127.0.0.1:$port"
+    local url
+    url="$("${id}_start" "$port" "$host")" || die "$id failed to start"
+    [[ -n $url ]] && ok "$url"
+    [[ $id == ssh || $id == nginx ]] || step "stop: tunnel stop $port $id   ·   list: tunnel ls"
+}
+
+cmd_stop() {
+    local port=${1:-} id=${2:-} rows a_id a_port _url
+    [[ -n $port ]] || {
+        ui_interactive || usage 2
+        local -a items=()
+        while read -r a_id a_port _url; do items+=("$a_port $a_id|$a_port  $a_id  $_url"); done < <(tunnels_active)
+        ((${#items[@]})) || {
+            step "no tunnels running"
+            return 0
+        }
+        local pick
+        pick="$(ui_choose "Stop which tunnel?" "${items[@]}" "all all|All of them")" || return 0
+        port=${pick%% *} id=${pick#* }
+        [[ $id == all ]] && id=''
+    }
+    rows="$(tunnels_active)"
+    while read -r a_id a_port _url; do
+        [[ -n $a_id ]] || continue
+        [[ $port == all || $port == "$a_port" ]] || continue
+        [[ -z $id || $id == "$a_id" ]] || continue
+        tunnel_stop "$a_id" "$a_port"
+        ok "stopped $a_id on $a_port"
+    done <<<"$rows"
+}
+
+wizard() {
+    local port id
+    port="$(net_pick_port "Which local port should the tunnel expose?")" || exit 0
+    local -a items=()
+    for id in "${TUNNEL_IDS[@]}"; do
+        if tunnel_ready "$id"; then
+            items+=("$id|$(tunnel_get "$id" title)")
+        else
+            items+=("$id|$(tunnel_get "$id" title)  (needs setup)")
+        fi
+    done
+    id="$(ui_choose "How should it be reachable?" "${items[@]}")" || exit 0
+    cmd_start "$port" "$id"
+}
+
+YES=0
+args=()
+for a in "$@"; do
+    case $a in -y | --yes) YES=1 ;; *) args+=("$a") ;; esac
+done
+set -- "${args[@]}"
+
+case ${1:-} in
+'') if ui_interactive; then wizard; else usage; fi ;;
+ls | list) cmd_ls ;;
+stop) cmd_stop "${2:-}" "${3:-}" ;;
+providers) cmd_providers ;;
+logs)
+    [[ -n ${2:-} ]] || usage 2
+    f="$(compgen -G "$TUNNEL_STATE/${3:-*}-$2.log" | head -1 || true)"
+    [[ -n $f ]] || die "no log for port $2"
+    tail -n 50 -F "$f"
+    ;;
+-h | --help) usage ;;
+[0-9]*) cmd_start "$1" "${2:-}" "${3:-}" ;;
+*) usage 2 ;;
+esac

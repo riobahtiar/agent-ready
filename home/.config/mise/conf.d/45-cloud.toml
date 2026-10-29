@@ -1,0 +1,10 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/45-cloud.toml) — cloud CLIs.
+# Credentials never go here: `aws configure sso` / ~/.aws, `wrangler login`,
+# `rclone config`, or tokens in ~/.config/secrets.env (CLOUDFLARE_API_TOKEN, …).
+[tools]
+aws-cli = "latest"          # aws s3 …, aws configure sso
+s5cmd = "latest"            # very fast parallel S3 copy/sync (also R2, MinIO)
+rclone = "latest"           # sync/mount S3, R2, B2, Drive, SFTP — backups too
+"npm:wrangler" = "latest"   # Cloudflare Workers, Pages, D1, R2, KV, Queues
+"npm:cf" = "latest"         # Cloudflare's new all-API CLI (beta; successor to wrangler)
+opentofu = "latest"         # `tofu` — open-source Terraform for DNS/infra as code

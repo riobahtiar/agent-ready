@@ -1,0 +1,43 @@
+# Managed by ~/.dotfiles (home/.config/git/config).
+# Identity lives in ~/.config/git/local (written from config.env, not committed).
+[include]
+    path = ~/.config/git/local
+
+[init]
+    defaultBranch = main
+[core]
+    pager = delta
+    excludesFile = ~/.config/git/ignore
+    autocrlf = input
+[interactive]
+    diffFilter = delta --color-only
+[delta]
+    navigate = true
+    line-numbers = true
+[merge]
+    conflictStyle = zdiff3
+[diff]
+    algorithm = histogram
+    colorMoved = default
+[pull]
+    rebase = true
+[push]
+    autoSetupRemote = true
+    default = current
+[fetch]
+    # Drops deleted remote branches so `cleanup worktrees` can spot finished work.
+    prune = true
+[rebase]
+    autoStash = true
+    updateRefs = true
+[rerere]
+    enabled = true
+[branch]
+    sort = -committerdate
+[column]
+    ui = auto
+[help]
+    autocorrect = prompt
+[worktree]
+    # Agents create many worktrees; let git follow relative paths if a repo moves.
+    useRelativePaths = true

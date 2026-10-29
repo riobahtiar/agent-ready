@@ -1,0 +1,24 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/47-delivery.toml) — tools for
+# shipping: test APIs, inspect data, keep secrets encrypted, scan before release.
+[tools]
+# API / performance
+hurl = "latest"             # HTTP requests + assertions in plain text files (great for agents)
+oha = "latest"              # quick HTTP load test with a live TUI
+# Data
+duckdb = "latest"           # SQL over CSV/JSON/Parquet/S3, no server
+usql = "latest"             # one SQL client for Postgres, MySQL, SQLite, SQL Server…
+# Dev loop
+process-compose = "latest"  # run app + worker + db like docker compose, without containers
+air = "latest"              # Go live reload
+act = "latest"              # run GitHub Actions workflows locally (in Docker)
+# JS / Python quality (fast, Rust-based)
+biome = "latest"            # format + lint JS/TS/JSON in one binary
+ty = "latest"               # Astral's Python type checker
+# Secrets as code
+sops = "latest"             # encrypted .env / YAML in git
+age = "latest"              # the key format sops uses here
+# Supply chain / containers
+trivy = "latest"            # scan images, repos and IaC for CVEs and secrets
+osv-scanner = "latest"      # dependency CVEs from lockfiles (npm, composer, go, pip, pub)
+dive = "latest"             # see what bloats a Docker image, layer by layer
+lnav = "latest"             # log viewer that understands nginx/syslog/JSON

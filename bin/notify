@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# notify — send yourself a Telegram message through the Hermes bot.
+#
+#   notify "deploy finished"
+#   long-build; notify "build exited $?"
+#   echo "multi-line text" | notify
+#
+# Uses TELEGRAM_BOT_TOKEN and the first id in TELEGRAM_ALLOWED_USERS from
+# ~/.hermes/.env (or ~/.config/secrets.env). You must have sent the bot a
+# message once. Sending doesn't disturb the Hermes gateway, which only reads
+# updates. Hook examples for agents: docs/06-tools-and-agents.md → "Get pinged".
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+
+[[ ${1:-} == -h || ${1:-} == --help ]] && {
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+}
+
+if (($#)); then
+    text="$*"
+elif [[ ! -t 0 ]]; then
+    text="$(cat)"
+else
+    die "usage: notify <message>   (or pipe text in)"
+fi
+[[ -n $text ]] || die "empty message"
+
+token='' chat=''
+for file in "$HOME/.hermes/.env" "$HOME/.config/secrets.env"; do
+    [[ -n $token ]] || token="$(env_get "$file" TELEGRAM_BOT_TOKEN)"
+    [[ -n $chat ]] || chat="$(env_get "$file" NOTIFY_TELEGRAM_CHAT)"
+    [[ -n $chat ]] || chat="$(env_get "$file" TELEGRAM_ALLOWED_USERS)"
+done
+chat=${chat%%,*}
+[[ -n $token ]] || die "no TELEGRAM_BOT_TOKEN in ~/.hermes/.env or ~/.config/secrets.env"
+[[ -n $chat ]] || die "no chat id: set TELEGRAM_ALLOWED_USERS (or NOTIFY_TELEGRAM_CHAT)"
+
+# The token is part of the URL; hand it to curl on stdin so it never shows in `ps`.
+printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$token" |
+    curl -fsS --max-time 15 -K - -o /dev/null \
+        --data-urlencode "chat_id=$chat" \
+        --data-urlencode "text=$(hostname -s): ${text:0:4000}" ||
+    die "Telegram rejected the message (has the bot seen a message from you yet?)"

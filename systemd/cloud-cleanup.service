@@ -1,0 +1,15 @@
+# Managed by ~/.dotfiles (systemd/cloud-cleanup.service) — rendered by stages/90-maintenance.sh
+# Safe subset only (--auto): caches, docker build cache/dangling images, agent
+# logs/tmp, git worktree metadata. Never removes worktrees or kills processes.
+[Unit]
+Description=Weekly cleanup of caches and agent residue
+After=docker.service
+
+[Service]
+Type=oneshot
+User=__USER__
+Environment=HOME=__HOME__
+Environment=PATH=__HOME__/.dotfiles/bin:__HOME__/.local/bin:__HOME__/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+ExecStart=__HOME__/.dotfiles/bin/cleanup --auto
+Nice=19
+IOSchedulingClass=idle

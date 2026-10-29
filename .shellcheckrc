@@ -1,0 +1,3 @@
+# Messages print "~/..." for humans on purpose.
+disable=SC2088
+external-sources=true

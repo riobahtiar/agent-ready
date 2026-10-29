@@ -1,0 +1,9 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/35-ai.toml) — LLM tooling.
+# More ideas are commented out: uncomment, then mise install.
+[tools]
+"npm:ccusage" = "latest"                # token/cost report for Claude Code + Codex sessions
+"npm:repomix" = "latest"                # pack a repo into one LLM-friendly file
+# "npm:@playwright/mcp" = "latest"      # browser MCP server (headless Chromium: ~300 MB RAM each)
+# "npm:@modelcontextprotocol/inspector" = "latest"  # debug MCP servers
+# "pipx:llm" = "latest"                 # Simon Willison's `llm` CLI for one-off prompts
+# "github:charmbracelet/crush" = "latest"  # another terminal agent to try

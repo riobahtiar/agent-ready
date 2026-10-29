@@ -1,0 +1,75 @@
+{
+  "network": {
+    "allowedDomains": [
+      "github.com",
+      "*.github.com",
+      "*.githubusercontent.com",
+      "ghcr.io",
+      "registry.npmjs.org",
+      "*.npmjs.org",
+      "registry.yarnpkg.com",
+      "bun.sh",
+      "*.bun.sh",
+      "pypi.org",
+      "files.pythonhosted.org",
+      "proxy.golang.org",
+      "sum.golang.org",
+      "storage.googleapis.com",
+      "packagist.org",
+      "repo.packagist.org",
+      "pub.dev",
+      "*.pub.dev",
+      "api.anthropic.com",
+      "*.anthropic.com",
+      "claude.ai",
+      "*.claude.ai",
+      "api.openai.com",
+      "*.openai.com",
+      "chatgpt.com",
+      "*.chatgpt.com",
+      "api.x.ai",
+      "openrouter.ai",
+      "generativelanguage.googleapis.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh",
+      "~/.aws",
+      "~/.gnupg",
+      "~/.kube",
+      "~/.docker",
+      "~/.cloudflared",
+      "~/.config/rclone",
+      "~/.config/gh",
+      "~/.config/.wrangler",
+      "~/.wrangler",
+      "~/.npmrc",
+      "~/.git-credentials",
+      "~/.netrc",
+      "~/.zrok",
+      "~/.zrok2",
+      "~/.config/secrets.env",
+      "~/.dotfiles/config.env",
+      "~/.hermes",
+      "~/.claude/.credentials.json",
+      "~/.codex/auth.json",
+      "~/.local/share/fish/fish_history",
+      "~/.bash_history",
+      "~/.zsh_history"
+    ],
+    "allowWrite": [
+      ".",
+      "/tmp",
+      "~/.npm",
+      "~/.local/share/pnpm"
+    ],
+    "denyWrite": [
+      ".env",
+      ".env.local",
+      ".git/hooks",
+      ".git/config"
+    ]
+  }
+}

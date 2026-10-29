@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# sandbox — run agents and untrusted commands with less reach.
+#
+#   sandbox                    at a terminal: menu
+#   sandbox check              which isolation layers work on this machine
+#   sandbox run <cmd…>         run a command under srt: writes only in the project + caches,
+#                              network only to the allowlist, no ~/.ssh / ~/.aws / secrets
+#   sandbox agent <name> [args…]   an agent CLI under srt (e.g. sandbox agent codex)
+#   sandbox box [image]        throwaway container with this directory at /work
+#                              (gVisor when installed · 2 CPUs · 2 GB · no published ports)
+#
+# Policy: ~/.srt-settings.json (from ~/.dotfiles/home). Layers and trade-offs:
+# docs/09-sandboxing.md. Claude Code also has its own: /sandbox inside a session.
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/agents.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+load_config
+
+usage() {
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-mcr.microsoft.com/devcontainers/base:ubuntu}"
+
+need_srt() { have srt || die "srt missing — mise install (home/.config/mise/conf.d/46-sandbox.toml)"; }
+
+cmd_check() {
+    local yes="${C_GREEN}✓${C_RESET}" no="${C_YELLOW}!${C_RESET}"
+    printf '%s\n' "$OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' (WSL)')"
+    if [[ $OS_KIND == macos ]]; then
+        printf '  %s Seatbelt (sandbox-exec) built in\n' "$yes"
+    elif have bwrap && bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true >/dev/null 2>&1; then
+        printf '  %s bubblewrap namespaces (Claude Code /sandbox, srt)\n' "$yes"
+    else
+        printf '  %s bubblewrap missing or blocked — ./install.sh sandbox\n' "$no"
+    fi
+    have socat && printf '  %s socat (srt network proxy)\n' "$yes" || { [[ $OS_KIND == macos ]] || printf '  %s socat missing\n' "$no"; }
+    have srt && printf '  %s srt %s (sandbox run / agent)\n' "$yes" "$(srt --version 2>/dev/null | head -1)" || printf '  %s srt missing — mise install\n' "$no"
+    [[ -f $HOME/.srt-settings.json ]] && printf '  %s policy ~/.srt-settings.json\n' "$yes" || printf '  %s no ~/.srt-settings.json — ./install.sh dotfiles\n' "$no"
+    if have docker && docker info >/dev/null 2>&1; then
+        if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q runsc; then
+            printf '  %s docker + gVisor runtime (sandbox box)\n' "$yes"
+        elif [[ $OS_KIND == macos ]]; then
+            printf '  %s docker (OrbStack/Docker Desktop VM) — sandbox box available\n' "$yes"
+        else
+            printf '  %s docker without gVisor — sandbox box uses runc (GVISOR=true for more)\n' "$no"
+        fi
+    else
+        printf '  %s docker not reachable — sandbox box unavailable\n' "$no"
+    fi
+    local claude_sb
+    claude_sb="$(jq -r '.sandbox.enabled // "unset"' "$HOME/.claude/settings.json" 2>/dev/null || echo unset)"
+    [[ $claude_sb == true ]] && printf '  %s Claude Code sandbox on (~/.claude/settings.json)\n' "$yes" ||
+        printf '  %s Claude Code sandbox %s — /sandbox in a session, or AGENT_SANDBOX=true + ./install.sh agents\n' "$no" "$claude_sb"
+    if have codex; then printf '  %s Codex: built-in Landlock/seccomp (Linux) / Seatbelt sandbox — keep --sandbox workspace-write\n' "$yes"; fi
+}
+
+# Only these variables cross into the sandbox: the shells export every key in
+# ~/.config/secrets.env, and a sandboxed command must not inherit them.
+SAFE_ENV=(PATH HOME USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL TZ TMPDIR EDITOR PAGER NO_COLOR DO_NOT_TRACK)
+# Tool caches and installs outside the project (mise, ~/.bun, ~/.cache, the
+# Go module cache) hold code that runs UNsandboxed later, so they're
+# read-only inside. Sandboxed commands get throwaway caches instead. (npm and
+# pnpm stay shared: their stores are content-addressed and integrity-checked.)
+# private_dir <name> — a FRESH directory only you own (mktemp -d, under
+# $XDG_RUNTIME_DIR when there is one), removed when this command exits. Never
+# reused: it's writable inside the sandbox, so a jailed run could leave links
+# in it that the next run's unsandboxed seeding would write through.
+PRIVATE_DIRS=()
+cleanup_private() { ((${#PRIVATE_DIRS[@]} == 0)) || rm -rf -- "${PRIVATE_DIRS[@]}"; }
+trap cleanup_private EXIT
+private_dir() {
+    local base=${XDG_RUNTIME_DIR:-} d
+    [[ -n $base && -d $base && -O $base && ! -L $base ]] || base=${TMPDIR:-/tmp}
+    d="$(mktemp -d "${base%/}/$1.XXXXXX")" || die "can't create a private directory in $base"
+    [[ -d $d && -O $d && ! -L $d ]] || die "unsafe sandbox directory $d"
+    chmod 700 "$d"
+    printf '%s\n' "$d"
+}
+
+clean_env() {
+    local v
+    local -a keep=()
+    for v in "${SAFE_ENV[@]}" "$@"; do [[ -n ${!v:-} ]] && keep+=("$v=${!v}"); done
+    keep+=("XDG_CACHE_HOME=$SANDBOX_CACHE/xdg" "GOCACHE=$SANDBOX_CACHE/go-build" "GOMODCACHE=$SANDBOX_CACHE/go-mod"
+        "UV_CACHE_DIR=$SANDBOX_CACHE/uv" "PIP_CACHE_DIR=$SANDBOX_CACHE/pip" "BUN_INSTALL_CACHE_DIR=$SANDBOX_CACHE/bun"
+        "MISE_CACHE_DIR=$SANDBOX_CACHE/mise" "PUB_CACHE=$SANDBOX_CACHE/pub" "COMPOSER_CACHE_DIR=$SANDBOX_CACHE/composer")
+    printf '%s\0' "${keep[@]}"
+}
+
+# run_policy <file> <writable dir…> — the shared policy plus this run's private dirs.
+run_policy() {
+    local out=$1
+    shift
+    have jq || die "jq is needed to build the sandbox policy"
+    mkdir -p "$(dirname "$out")"
+    jq --args '.filesystem.allowWrite += $ARGS.positional' "$@" <"$HOME/.srt-settings.json" >"$out"
+}
+
+cmd_run() {
+    (($#)) || usage 2
+    need_srt
+    SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    PRIVATE_DIRS+=("$SANDBOX_CACHE")
+    local policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-run.json"
+    run_policy "$policy" "$SANDBOX_CACHE"
+    local -a env=()
+    mapfile -d '' -t env < <(clean_env)
+    # Not exec: the private dirs are removed when srt exits.
+    local rc=0
+    env -i "${env[@]}" srt --settings "$policy" -- "$@" || rc=$?
+    exit "$rc"
+}
+
+cmd_agent() {
+    local name=${1:-}
+    if [[ -z $name ]]; then
+        ui_interactive || usage 2
+        local -a items=()
+        for name in $(agents_installed); do items+=("$name|$name — $(agent_get "$name" title)"); done
+        name="$(ui_choose "Run which agent in the sandbox?" "${items[@]}")" || exit 0
+        set -- "$name"
+    fi
+    shift
+    agent_known "$name" || die "unknown agent '$name'"
+    need_srt
+    have jq || die "jq is needed to build the agent's policy"
+    # The agent may READ its own config dir (sign-in) and use its own API key.
+    # It may WRITE only the session/log paths its module lists (an allowlist:
+    # a denylist of "dangerous" config is never complete), so a jailed agent
+    # can't plant a hook, plugin or MCP entry that runs unjailed next time.
+    local own state protect policy p
+    own="$(agent_get "$name" config)" state="$(agent_get "$name" state)" protect="$(agent_get "$name" protect)"
+    [[ -n $state ]] || warn "$name declares no writable state: it can read its config but not save sessions here"
+    # Create them first (srt can only bind paths that exist), and refuse any
+    # that is, or passes through, a symlink: it could point the writable bind
+    # at something that runs later (~/.bashrc, a hook dir).
+    for p in $state; do
+        p="$(_expand_home "$p")"
+        if [[ ! -e $p && ! -L $p ]]; then
+            if [[ $(basename "$p") == *.* ]]; then mkdir -p "$(dirname "$p")" && : >>"$p"; else mkdir -p "$p"; fi
+        fi
+        [[ -L $p || $(readlink -f "$p") != "$p" ]] && die "refusing writable state path ${p/#$HOME/\~}: it is (or passes through) a symlink"
+    done
+    SANDBOX_CACHE="$(private_dir sandbox-cache)"
+    PRIVATE_DIRS+=("$SANDBOX_CACHE")
+    state+=" $SANDBOX_CACHE"
+    # Agents with a jail hook run on a throwaway config dir instead.
+    local -a jail_env=()
+    if declare -F "${name}_jail" >/dev/null; then
+        local jail
+        jail="$(private_dir "sandbox-$name")"
+        PRIVATE_DIRS+=("$jail")
+        # Seeded while it is new and empty, before anything sandboxed runs.
+        mapfile -t jail_env < <("${name}_jail" "$jail")
+        state+=" $jail"
+    fi
+    policy="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/srt-$name.json"
+    mkdir -p "$(dirname "$policy")"
+    jq --arg own "$own" --arg state "$state" --arg protect "$protect" '
+        def words: split(" ") | map(select(length > 0));
+        ($own | words) as $o
+        | .filesystem.denyRead |= map(select(. as $d | ($o | any(. as $x | $d == $x or ($d | startswith($x + "/")))) | not))
+        | .filesystem.allowWrite += ($state | words)
+        | .filesystem.denyWrite += ($protect | words)' "$HOME/.srt-settings.json" >"$policy"
+    local -a env=()
+    # shellcheck disable=SC2046
+    mapfile -d '' -t env < <(clean_env $(agent_get "$name" env))
+    env+=("${jail_env[@]}")
+    warn "agent sandboxed: writes only in $(pwd), caches and its own config; network only to the allowlist"
+    local rc=0
+    env -i "${env[@]}" srt --settings "$policy" -- "$(agent_bin "$name")" "$@" || rc=$?
+    exit "$rc"
+}
+
+cmd_box() {
+    local image=${1:-$SANDBOX_IMAGE}
+    have docker || die "docker is not installed"
+    local -a args=(--rm -it --init --memory 2g --cpus 2 --pids-limit 1024
+        --security-opt no-new-privileges -v "$PWD:/work" -w /work --hostname sandbox)
+    if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q runsc; then
+        args+=(--runtime runsc)
+        log "gVisor box: $image  ($PWD → /work)"
+    else
+        log "container box: $image  ($PWD → /work) — install gVisor (GVISOR=true) for a stronger boundary"
+    fi
+    step "only /work is shared; exit to throw the container away"
+    exec docker run "${args[@]}" "$image" bash
+}
+
+menu() {
+    case "$(ui_choose "Sandbox" \
+        "check|What isolation works here" \
+        "agent|Run an agent CLI sandboxed (srt)" \
+        "run|Run a command sandboxed (srt)" \
+        "box|Throwaway container with this directory" \
+        "policy|Edit the srt policy (~/.srt-settings.json)")" in
+    check) cmd_check ;;
+    agent) cmd_agent ;;
+    run)
+        local cmd
+        cmd="$(ui_input "Command" "" "npm test")" || exit 0
+        # shellcheck disable=SC2086
+        [[ -n $cmd ]] && cmd_run bash -c "$cmd"
+        ;;
+    box) cmd_box ;;
+    policy) exec "${EDITOR:-nano}" "$DOTFILES_DIR/home/.srt-settings.json" ;;
+    esac
+}
+
+case ${1:-} in
+'') if ui_interactive; then menu; else usage; fi ;;
+check) cmd_check ;;
+run) shift && cmd_run "$@" ;;
+agent) shift && cmd_agent "$@" ;;
+box) cmd_box "${2:-}" ;;
+-h | --help) usage ;;
+*) usage 2 ;;
+esac

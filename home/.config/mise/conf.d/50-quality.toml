@@ -1,0 +1,6 @@
+# Managed by ~/.dotfiles (home/.config/mise/conf.d/50-quality.toml) — lint and security.
+[tools]
+shellcheck = "latest"
+shfmt = "latest"
+hadolint = "latest"
+gitleaks = "latest"

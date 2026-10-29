@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# update-all — upgrade the agents and tools on this box.
+#
+#   update-all               at a terminal: pick what to update (all preselected)
+#   update-all -y            everything, no questions (also the default without a TTY)
+#   update-all agents        only the agent CLIs (every module in agents.d/ that is installed)
+#   update-all claude codex  only these agents
+#   update-all tools shell   any mix of the groups below
+#   update-all --check       what's outdated, without changing anything
+#   update-all --quick       everything except apt (no sudo)
+#   update-all -n            print the plan only
+#
+# Groups: system (apt) · tools (mise: runtimes + CLIs) · agents · shell (fish
+# plugins) · php (composer) · extras (uv tools, gh extensions) · dotfiles (git
+# pull ~/.dotfiles + re-link; never part of "everything", also --self).
+# Failures are reported and skipped; nothing here deletes data.
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/agents.sh"
+source "$DOTFILES_DIR/lib/pkg.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+load_config
+
+GROUPS_ALL=(system tools agents shell php extras)
+usage() {
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+DRY=0 CHECK=0 QUICK=0 SELF=0 YES=0
+groups=() agents=()
+for arg in "$@"; do
+    case $arg in
+    -y | --yes | --all) YES=1 ;;
+    -n | --dry-run) DRY=1 ;;
+    --check) CHECK=1 ;;
+    --quick) QUICK=1 ;;
+    --self) SELF=1 ;;
+    -h | --help) usage ;;
+    system | tools | agents | shell | php | extras | dotfiles) groups+=("$arg") ;;
+    *)
+        agent_known "$arg" || die "unknown group or agent: $arg (see update-all --help)"
+        agents+=("$arg")
+        ;;
+    esac
+done
+
+# ─── --check: report only ───
+if ((CHECK)); then
+    log "Outdated mise tools"
+    if have mise; then mise outdated 2>/dev/null || true; else warn "mise not found"; fi
+    log "Agent CLIs (their updaters check for newer versions themselves)"
+    agents_table
+    log "System packages ($OS_FAMILY)"
+    # Each checker has its own "nothing to update" exit status; accept only the
+    # documented ones and report anything else, never a silent 0.
+    check_out='' check_err='' check_rc=0
+    capture() {
+        local errf
+        errf="$(mktemp)"
+        check_rc=0
+        check_out="$("$@" 2>"$errf")" || check_rc=$?
+        check_err="$(head -3 "$errf")"
+        rm -f "$errf"
+    }
+    lines() { grep -c "${1:-.}" <<<"$check_out" || true; }
+    n='' tool=''
+    case $OS_FAMILY in
+    debian)
+        tool="apt list --upgradable"
+        capture apt list --upgradable
+        ((check_rc == 0)) && n="$(lines '/')" # one "pkg/suite …" line per package
+        ;;
+    arch)
+        if have checkupdates; then # pacman-contrib: no root, doesn't touch the live db
+            tool=checkupdates
+            capture checkupdates
+            case $check_rc in 0) n="$(lines)" ;; 2) n=0 ;; esac # 2 = no updates, 1 = error
+        else
+            tool="pacman -Qu"
+            capture pacman -Qu
+            # 1 is both "nothing to upgrade" and an error; only stderr tells them apart.
+            if ((check_rc == 0)); then n="$(lines)"; elif ((check_rc == 1)) && [[ -z $check_err ]]; then n=0; fi
+        fi
+        ;;
+    fedora)
+        tool="dnf check-update"
+        capture dnf -q check-update
+        case $check_rc in 100) n="$(lines '^[[:alnum:]]')" ;; 0) n=0 ;; esac # 100 = updates, 1 = error
+        ;;
+    macos)
+        tool="brew outdated"
+        capture brew outdated
+        ((check_rc == 0)) && n="$(lines)"
+        ;;
+    *) warn "no package manager check for $OS_PRETTY" ;;
+    esac
+    if [[ -z $n ]]; then
+        [[ -n $tool ]] && warn "$tool failed (exit $check_rc)${check_err:+: $check_err}"
+        exit 1
+    fi
+    echo "    $n package(s) upgradable"
+    exit 0
+fi
+
+# ─── pick ───
+if ((${#groups[@]} + ${#agents[@]} == 0)); then
+    if ((! YES)) && ui_interactive; then
+        items=(
+            "system|System packages (apt full-upgrade · sudo)"
+            "tools|Runtimes + CLIs via mise (node bun go python flutter rg …)"
+        )
+        while read -r name; do
+            [[ -n $name ]] && items+=("agent:$name|Agent: $name")
+        done < <(agents_installed)
+        items+=(
+            "shell|Fish plugins (fisher · easy-eel prompt)"
+            "php|Composer"
+            "extras|uv tools + gh extensions"
+            "dotfiles|~/.dotfiles: git pull + re-link"
+        )
+        defaults="system tools shell php extras $(agents_installed | sed 's/^/agent:/' | tr '\n' ' ')"
+        ((QUICK)) && defaults=${defaults/system /}
+        picked="$(ui_multi "Update what?" "$defaults" "${items[@]}")" || exit 0
+        [[ -n $picked ]] || exit 0
+        while read -r item; do
+            case $item in
+            agent:*) agents+=("${item#agent:}") ;;
+            *) groups+=("$item") ;;
+            esac
+        done <<<"$picked"
+    else
+        groups=("${GROUPS_ALL[@]}")
+    fi
+fi
+want() { [[ " ${groups[*]} " == *" $1 "* ]]; }
+if want agents; then mapfile -t agents < <(agents_installed); fi
+((SELF)) && groups+=(dotfiles)
+((QUICK)) && groups=("${groups[@]/system/}")
+
+# ─── run ───
+failed=()
+task() {
+    local name=$1
+    shift
+    log "$name"
+    if ((DRY)); then
+        step "would run: $*"
+        return 0
+    fi
+    "$@" || {
+        warn "$name failed"
+        failed+=("$name")
+    }
+}
+
+if want dotfiles; then
+    task "dotfiles (git pull)" git -C "$DOTFILES_DIR" pull --ff-only
+    task "dotfiles (re-link)" env DOTFILES_DIR="$DOTFILES_DIR" bash "$DOTFILES_DIR/stages/50-dotfiles.sh"
+fi
+
+# system_upgrade — refresh + full upgrade with this OS's package manager.
+system_upgrade() {
+    case $OS_FAMILY in
+    debian) pkg_refresh && pkg_upgrade && as_root apt-get autoremove -y -qq ;;
+    arch) pkg_upgrade ;; # pacman -Syu: refresh and upgrade together
+    fedora | macos) pkg_refresh && pkg_upgrade ;;
+    *)
+        warn "no package manager recipe for $OS_PRETTY"
+        return 1
+        ;;
+    esac
+}
+
+if want system; then
+    task "system packages ($OS_FAMILY)" system_upgrade
+fi
+
+if want tools && have mise; then
+    task "mise tools (incl. codex)" mise upgrade --yes
+fi
+
+declare -A before=()
+for name in "${agents[@]}"; do
+    agent_installed "$name" || {
+        warn "$name is not installed — ./install.sh agents"
+        continue
+    }
+    # codex is a mise tool: the step above already upgraded it.
+    [[ $name == codex ]] && want tools && continue
+    before[$name]="$(agent_version "$name")"
+    task "agent: $name" agent_update "$name"
+done
+if ((${#before[@]})) && have herdr && ((! DRY)); then
+    # Updates can replace an agent's hook config; re-assert the sidebar hooks.
+    for name in "${!before[@]}"; do
+        target="$(agent_get "$name" herdr)"
+        [[ $target == - ]] || herdr integration install "$target" >/dev/null 2>&1 || true
+    done
+fi
+
+want shell && have fish && task "fish plugins" fish -c 'fisher update'
+want php && have composer && task "composer" sudo composer self-update --quiet
+if want extras; then
+    have uv && [[ -n $(uv tool list 2>/dev/null | grep -v '^-' | head -1) ]] && task "uv tools" uv tool upgrade --all
+    have gh && [[ -n $(gh extension list 2>/dev/null | head -1) ]] && task "gh extensions" gh extension upgrade --all
+fi
+
+# ─── summary ───
+if ((${#before[@]})) && ((! DRY)); then
+    echo >&2
+    log "Agent versions"
+    for name in "${agents[@]}"; do
+        [[ -n ${before[$name]+set} ]] || continue
+        now="$(agent_version "$name")"
+        if [[ ${before[$name]} == "$now" ]]; then
+            printf '    %-10s %s\n' "$name" "${now:--}" >&2
+        else
+            printf '    %-10s %s → %s%s%s\n' "$name" "${before[$name]:--}" "$C_GREEN" "${now:--}" "$C_RESET" >&2
+        fi
+    done
+fi
+
+echo >&2
+if ((${#failed[@]})); then
+    warn "finished with failures: ${failed[*]}"
+    exit 1
+fi
+ok "up to date"
+[[ -f /var/run/reboot-required ]] && warn "a reboot is required (kernel/libc update) — reboot when agents are idle"
+exit 0

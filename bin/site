@@ -1,0 +1,277 @@
+#!/usr/bin/env bash
+# site — host mini projects behind nginx with automatic Let's Encrypt TLS.
+#
+#   site add <domain> --proxy <port>        app listening on 127.0.0.1:<port> (node, bun, go, python, docker…)
+#   site add <domain> --static <dir> [--spa]  static files (default dir: $WWW_DIR/<domain>)
+#   site add <domain> --php <dir>           php-fpm (Laravel: point at public/)
+#   site rm <domain> [--purge-cert]         disable + delete the vhost
+#   site ls                                 list managed sites
+#   site logs <domain> [error]              tail access (or error) log
+#   site test                               nginx -t
+#   site renew                              re-render every managed vhost from the current templates
+#   site                                    interactive menu (at a terminal)
+#
+# Leave out the domain or type and `site add` asks for them. The domain's DNS
+# A record must already point at this server. Re-running `site add`
+# re-renders the vhost from ~/.dotfiles/nginx/templates.
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/nginx.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+source "$DOTFILES_DIR/lib/net.sh"
+load_config
+
+usage() {
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+# The path lands in `root …;` of the vhost: no spaces, quotes, ; { } or newlines.
+valid_root() { [[ $1 =~ ^/[A-Za-z0-9._@+/-]+$ ]] || die "unsupported characters in path (letters, digits, . _ @ + - / only): $1"; }
+valid_domain() { [[ $1 =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] || die "invalid domain: $1"; }
+
+# site_domains — domains of the vhosts this repo manages.
+site_domains() {
+    local f
+    for f in /etc/nginx/sites-enabled/*.conf; do
+        [[ -e $f ]] && sed -n '1s/^# site: \([^ ]*\).*/\1/p' "$f"
+    done
+}
+
+# pick_domain <header> — choose one managed site.
+pick_domain() {
+    local -a items=()
+    local d
+    while read -r d; do [[ -n $d ]] && items+=("$d|$d"); done < <(site_domains)
+    ((${#items[@]})) || die "no managed sites yet — add one with: site add"
+    ui_choose "$1" "${items[@]}"
+}
+
+# wizard_add — ask for everything `site add` needs, then run it.
+wizard_add() {
+    ui_title "Add a site"
+    local domain kind arg="" spa_flag=()
+    while :; do
+        domain="$(ui_input "Domain (its DNS A record must point here)" "" "app.example.com")" || exit 0
+        domain=${domain,,}
+        [[ $domain =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] && break
+        warn "not a domain: '$domain'"
+    done
+    kind="$(ui_choose "What does $domain serve?" \
+        "proxy|App on a local port (Node · Bun · Go · Python · Docker)" \
+        "static|Static files (HTML · built SPA)" \
+        "php|PHP via php-fpm (Laravel: the public/ dir)")" || exit 0
+    case $kind in
+    proxy)
+        arg="$(net_pick_port "Upstream port on 127.0.0.1")" || exit 0
+        ;;
+    static)
+        arg="$(ui_input "Directory" "$WWW_DIR/$domain")" || exit 0
+        ui_confirm "Single-page app (unknown paths serve index.html)?" no && spa_flag=(--spa)
+        ;;
+    php)
+        arg="$(ui_input "Document root" "" "$PROJECTS_DIR/app/public")" || exit 0
+        ;;
+    esac
+    echo >&2
+    step "site add $domain --$kind $arg ${spa_flag[*]}"
+    ui_confirm "Create it (and request a Let's Encrypt certificate)?" yes || exit 0
+    cmd_add "$domain" "--$kind" "$arg" "${spa_flag[@]}"
+}
+
+menu() {
+    local choice domain
+    # Ctrl-C stops a running `logs` tail, not the menu.
+    trap 'echo >&2' INT
+    while :; do
+        choice="$(ui_choose "Sites on $(hostname -s)" \
+            "ls|List sites and certificates" \
+            "add|Add a site" \
+            "rm|Remove a site" \
+            "logs|Follow a site's access log" \
+            "errors|Follow a site's error log" \
+            "test|Check nginx config" \
+            "quit|Quit")" || return 0
+        # Subshells: a `die` inside one action returns to the menu.
+        case $choice in
+        ls) (cmd_ls) || true ;;
+        add) (wizard_add) || true ;;
+        rm) domain="$(pick_domain "Remove which site?")" && { (cmd_rm "$domain") || true; } ;;
+        logs) domain="$(pick_domain "Logs for?")" && { (cmd_logs "$domain") || true; } ;;
+        errors) domain="$(pick_domain "Error log for?")" && { (cmd_logs "$domain" error) || true; } ;;
+        test) as_root nginx -t || true ;;
+        quit) return 0 ;;
+        esac
+        ui_pause
+    done
+}
+
+cmd_add() {
+    local domain=${1:-}
+    if [[ -z $domain || $domain == --* ]]; then
+        ui_interactive && wizard_add && return
+        usage 2
+    fi
+    shift
+    domain=${domain,,}
+    valid_domain "$domain"
+    local kind='' arg='' spa=0
+    while (($#)); do
+        case $1 in
+        --proxy | --static | --php)
+            kind=${1#--}
+            if [[ ${2:-} && $2 != --* ]]; then arg=$2 && shift; fi
+            ;;
+        --spa) spa=1 ;;
+        *) usage 2 ;;
+        esac
+        shift
+    done
+    if [[ -z $kind ]]; then
+        ui_interactive || die "choose one of --proxy <port>, --static [dir], --php <dir>"
+        kind="$(ui_choose "What does $domain serve?" "proxy|App on a local port" "static|Static files" "php|PHP via php-fpm")" || exit 0
+    fi
+    if [[ -z $arg ]] && ui_interactive; then
+        case $kind in
+        proxy) arg="$(ui_input "Upstream port on 127.0.0.1" "3000")" || exit 0 ;;
+        php) arg="$(ui_input "Document root" "" "$PROJECTS_DIR/app/public")" || exit 0 ;;
+        esac
+    fi
+
+    local -a vars=()
+    case $kind in
+    proxy)
+        [[ $arg =~ ^[0-9]+$ ]] && ((arg > 0 && arg < 65536)) || die "--proxy needs a port number"
+        net_answers "$arg" ||
+            warn "nothing answers on 127.0.0.1:$arg yet — nginx will return 502 until it does"
+        vars=(UPSTREAM="127.0.0.1:$arg")
+        ;;
+    static)
+        arg=${arg:-$WWW_DIR/$domain}
+        arg="$(readlink -m "$arg")"
+        valid_root "$arg"
+        if [[ ! -d $arg ]]; then
+            install -d -m 2775 "$arg"
+            printf '<!doctype html><title>%s</title><h1>%s</h1>\n' "$domain" "$domain" >"$arg/index.html"
+            step "created $arg with a placeholder index.html"
+        fi
+        local try='$uri $uri/ =404'
+        ((spa)) && try='$uri $uri/ /index.html'
+        vars=(ROOT="$arg" TRY_FILES="$try" SPA="$spa")
+        ;;
+    php)
+        [[ -n $arg ]] || die "--php needs the document root (e.g. ~/projects/app/public)"
+        arg="$(readlink -m "$arg")"
+        valid_root "$arg"
+        [[ -d $arg ]] || die "$arg does not exist"
+        vars=(ROOT="$arg" PHP_SOCK="$(php_fpm_socket)")
+        ;;
+    esac
+
+    if [[ $kind != proxy ]]; then
+        # nginx (www-data) must be able to traverse every parent directory.
+        local dir=$arg
+        while [[ $dir != / ]]; do
+            if ! as_root runuser -u www-data -- test -x "$dir" 2>/dev/null; then
+                warn "www-data can't enter $dir — run: chmod o+x '$dir' (or keep sites under $WWW_DIR)"
+                break
+            fi
+            dir="$(dirname "$dir")"
+        done
+    fi
+
+    log "site add $domain ($kind${arg:+ $arg})"
+    cert_issue "$domain" || die "no certificate for $domain — fix the above, then run site add again"
+    site_write "$domain" "$kind" "${vars[@]}"
+}
+
+cmd_rm() {
+    local domain=${1:-}
+    if [[ -z $domain ]]; then
+        ui_interactive || usage 2
+        domain="$(pick_domain "Remove which site?")" || exit 0
+    fi
+    valid_domain "$domain"
+    [[ ${HERMES_DOMAIN:-} == "$domain" ]] && warn "$domain is the Hermes dashboard (stages/80-hermes.sh will recreate it)"
+    ui_confirm "Remove nginx site $domain?" || die "cancelled"
+    as_root rm -f "/etc/nginx/sites-enabled/$domain.conf" "/etc/nginx/sites-available/$domain.conf"
+    nginx_reload
+    ok "removed $domain"
+    local purge=${2:-}
+    if [[ -z $purge ]] && cert_exists "$domain" && ui_interactive &&
+        ui_confirm "Also delete its Let's Encrypt certificate?"; then
+        purge=--purge-cert
+    fi
+    if [[ $purge == --purge-cert ]] && cert_exists "$domain"; then
+        as_root certbot delete --cert-name "$domain" --non-interactive
+        ok "deleted certificate"
+    fi
+}
+
+cmd_ls() {
+    local f header domain kind target expiry
+    printf '%-32s %-7s %-40s %s\n' DOMAIN TYPE TARGET "CERT EXPIRES"
+    for f in /etc/nginx/sites-enabled/*.conf; do
+        [[ -e $f ]] || continue
+        header="$(sed -n '1s/^# site: //p' "$f")"
+        [[ -n $header ]] || continue
+        domain=${header%% *}
+        kind="$(grep -oE 'type=[a-z]+' <<<"$header" | cut -d= -f2)"
+        target="$(grep -oE '(upstream|root)=[^ ]+' <<<"$header" | cut -d= -f2)"
+        expiry="$(as_root openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$domain/cert.pem" 2>/dev/null | cut -d= -f2 || echo '-')"
+        printf '%-32s %-7s %-40s %s\n' "$domain" "$kind" "$target" "${expiry:--}"
+    done
+}
+
+cmd_logs() {
+    local domain=${1:-}
+    if [[ -z $domain ]]; then
+        ui_interactive || usage 2
+        domain="$(pick_domain "Logs for?")" || exit 0
+    fi
+    local which=access
+    [[ ${2:-} == error ]] && which=error
+    as_root tail -n 100 -F "/var/log/nginx/$domain.$which.log"
+}
+
+# cmd_renew — rebuild each vhost from its header line (after a template change).
+cmd_renew() {
+    local f header domain kind target spa n=0
+    local -a failed=()
+    for f in /etc/nginx/sites-enabled/*.conf; do
+        [[ -e $f ]] || continue
+        header="$(sed -n '1s/^# site: //p' "$f")"
+        [[ -n $header ]] || continue
+        domain=${header%% *}
+        kind="$(grep -oE 'type=[a-z]+' <<<"$header" | cut -d= -f2)"
+        target="$(grep -oE '(upstream|root)=[^ ]+' <<<"$header" | cut -d= -f2)"
+        spa="$(grep -oE 'spa=[01]' <<<"$header" | cut -d= -f2 || true)" # proxy/php headers have none
+        # A rejected vhost keeps its previous config (site_write); carry on with the rest.
+        local try='$uri $uri/ =404'
+        [[ $spa == 1 ]] && try='$uri $uri/ /index.html'
+        case $kind in
+        proxy) site_write "$domain" proxy UPSTREAM="$target" || failed+=("$domain") ;;
+        static) site_write "$domain" static ROOT="$target" TRY_FILES="$try" SPA="${spa:-0}" || failed+=("$domain") ;;
+        php) site_write "$domain" php ROOT="$target" PHP_SOCK="$(php_fpm_socket)" || failed+=("$domain") ;;
+        *) step "$domain ($kind) is managed by its stage — skipped" && continue ;;
+        esac
+        n=$((n + 1))
+    done
+    ok "re-rendered $((n - ${#failed[@]})) of $n site(s)"
+    if ((${#failed[@]})); then
+        warn "kept the previous config for: ${failed[*]} (see the nginx -t output above)"
+        return 1
+    fi
+}
+
+case ${1:-} in
+add) shift && cmd_add "$@" ;;
+renew) cmd_renew ;;
+rm | remove) shift && cmd_rm "$@" ;;
+ls | list) cmd_ls ;;
+logs) shift && cmd_logs "$@" ;;
+test) as_root nginx -t ;;
+-h | --help) usage ;;
+'') if ui_interactive; then menu; else usage; fi ;;
+*) usage 2 ;;
+esac

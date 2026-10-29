@@ -1,0 +1,21 @@
+# Managed by ~/.dotfiles — global gitignore for every repo on this box.
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Agent scratch (worktrees from `wt`, local agent settings, memory files)
+.worktrees/
+.claude/worktrees/
+.claude/settings.local.json
+.remember/
+.aider*
+
+# Editors / OS
+.DS_Store
+*.swp
+*.swo
+*~

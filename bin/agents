@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# agents — the AI agent CLIs on this machine (modules in ~/.dotfiles/agents.d).
+#
+#   agents                      table: version, path, fish b-* bypass wrapper
+#   agents install <name…>      install (also adds it to AGENTS in config.env)
+#   agents update [name…]       update all installed agents, or just these
+#   agents login [name]         sign in (menu when no name)
+#   agents herdr                (re)install herdr sidebar hooks for every installed agent
+#   agents remove <name> [--purge]   uninstall; --purge also deletes its settings/history
+#   agents new <name>           scaffold agents.d/<name>.sh from the template
+#   agents retire <name>        sunset: uninstall, drop from AGENTS, move module to agents.d/retired/
+#   agents restore <name>       bring a retired module back
+#
+# Details: docs/06-tools-and-agents.md
+set -Eeuo pipefail
+source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+source "$DOTFILES_DIR/lib/agents.sh"
+source "$DOTFILES_DIR/lib/ui.sh"
+source "$DOTFILES_DIR/lib/configure.sh"
+load_config
+CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+
+usage() {
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+need_known() { agent_known "$1" || die "unknown agent '$1' — known: ${AGENT_NAMES[*]} (new one: agents new $1)"; }
+
+# config_agents add|del <name> — keep AGENTS in config.env in sync.
+config_agents() {
+    [[ -f $CONFIG_FILE ]] || return 0
+    local list
+    list=" $(config_value AGENTS) "
+    case $1 in
+    add) [[ $list == *" $2 "* ]] || list="$list$2 " ;;
+    del) list=${list// $2 / } ;;
+    esac
+    list="$(xargs <<<"$list")"
+    config_set "$CONFIG_FILE" AGENTS "$list"
+}
+
+pick_agent() {
+    local header=$1 filter=$2 name
+    local -a items=()
+    for name in "${AGENT_NAMES[@]}"; do
+        case $filter in
+        installed) agent_installed "$name" || continue ;;
+        missing) agent_installed "$name" && continue ;;
+        esac
+        items+=("$name|$name — $(agent_get "$name" title)")
+    done
+    ((${#items[@]})) || die "nothing to choose from"
+    ui_choose "$header" "${items[@]}"
+}
+
+herdr_hooks() {
+    have herdr || die "herdr is not installed — agents install herdr"
+    local name target
+    for name in "${AGENT_NAMES[@]}"; do
+        target="$(agent_get "$name" herdr)"
+        [[ $target != - ]] && agent_installed "$name" || continue
+        if herdr integration install "$target" >/dev/null 2>&1; then ok "herdr ↔ $name"; else warn "herdr ↔ $name failed (launch $name once, then retry)"; fi
+    done
+}
+
+cmd_login() {
+    local name=${1:-} login
+    if [[ -z $name ]]; then
+        ui_interactive || usage 2
+        name="$(pick_agent "Sign in to" installed)" || exit 0
+    fi
+    need_known "$name"
+    login="$(agent_get "$name" login)"
+    [[ -n $login && $login != - ]] || die "$name has no sign-in step"
+    log "$name: $login"
+    # Run the command part (before two spaces / "then"); the rest is a hint.
+    local cmd=${login%%   *}
+    cmd=${cmd%% then*}
+    # shellcheck disable=SC2086
+    exec $cmd
+}
+
+cmd_new() {
+    local name=${1:-}
+    [[ -n $name ]] || { ui_interactive && name="$(ui_input "Command name of the new agent" "" "kimi")"; } || usage 2
+    [[ $name =~ ^[a-z][a-z0-9_]*$ ]] || die "use lowercase letters, digits and _ (it becomes a bash function prefix)"
+    local file="$AGENTS_DIR/$name.sh"
+    [[ -e $file ]] && die "$file already exists"
+    [[ -e $AGENTS_DIR/retired/$name.sh ]] && die "$name is retired — bring it back with: agents restore $name"
+    sed "s/NAME/$name/g" "$AGENTS_DIR/_template.sh" | sed '/^# agents.d\/<name>.sh/,/^# Helpers:/d' >"$file"
+    sed -i.bak "1a\\
+# $name — what it is, where its docs live." "$file" && rm -f "$file.bak"
+    ok "created ${file/#$HOME/\~}"
+    step "fill in title/login/paths and ${name}_install, then: agents install $name"
+    step "optional: a b-$name bypass wrapper in home/.config/fish/cloud/ai_bypass.fish"
+    if ui_interactive && ui_confirm "Open it in ${EDITOR:-nano} now?" yes; then "${EDITOR:-nano}" "$file"; fi
+}
+
+cmd_remove() {
+    local name=${1:-} purge=${2:-}
+    if [[ -z $name ]]; then
+        ui_interactive || usage 2
+        name="$(pick_agent "Uninstall which agent?" installed)" || exit 0
+        ui_confirm "Also delete its settings and history ($(agent_get "$name" config))?" && purge=--purge
+    fi
+    need_known "$name"
+    local what
+    what="binaries ($(agent_get "$name" paths))"
+    [[ $purge == --purge ]] && what="$what AND settings/history ($(agent_get "$name" config))"
+    ui_confirm "Uninstall $name: $what?" || die "cancelled"
+    agent_uninstall "$name" "$purge"
+    agent_installed "$name" && warn "$(agent_bin "$name") is still on PATH at $(command -v "$(agent_bin "$name")") — remove it by hand" ||
+        ok "$name uninstalled"
+}
+
+cmd_retire() {
+    local name=${1:-}
+    if [[ -z $name ]]; then
+        ui_interactive || usage 2
+        name="$(pick_agent "Retire which agent?" all)" || exit 0
+    fi
+    need_known "$name"
+    ui_title "Retire $name: uninstall, remove from AGENTS, move agents.d/$name.sh → agents.d/retired/"
+    ui_confirm "Go ahead?" || die "cancelled"
+    if agent_installed "$name"; then
+        local purge=''
+        ui_confirm "Delete its settings/history too ($(agent_get "$name" config))?" && purge=--purge
+        agent_uninstall "$name" "$purge"
+    fi
+    config_agents del "$name"
+    mkdir -p "$AGENTS_DIR/retired"
+    if git -C "$DOTFILES_DIR" ls-files --error-unmatch "agents.d/$name.sh" >/dev/null 2>&1; then
+        git -C "$DOTFILES_DIR" mv "agents.d/$name.sh" "agents.d/retired/$name.sh"
+    else
+        mv "$AGENTS_DIR/$name.sh" "$AGENTS_DIR/retired/$name.sh"
+    fi
+    local guide
+    guide="$(agent_get "$name" guide)"
+    [[ $guide != - ]] && step "the shared guide link ${guide} stays until you delete it"
+    grep -q "b-$name" "$DOTFILES_DIR/home/.config/fish/cloud/ai_bypass.fish" 2>/dev/null &&
+        step "its b-$name wrapper is still in home/.config/fish/cloud/ai_bypass.fish — delete it if you like"
+    ok "$name retired — commit ~/.dotfiles to record it"
+}
+
+cmd_restore() {
+    local name=${1:-}
+    [[ -n $name ]] || usage 2
+    [[ -f $AGENTS_DIR/retired/$name.sh ]] || die "no agents.d/retired/$name.sh"
+    if git -C "$DOTFILES_DIR" ls-files --error-unmatch "agents.d/retired/$name.sh" >/dev/null 2>&1; then
+        git -C "$DOTFILES_DIR" mv "agents.d/retired/$name.sh" "agents.d/$name.sh"
+    else
+        mv "$AGENTS_DIR/retired/$name.sh" "$AGENTS_DIR/$name.sh"
+    fi
+    ok "restored — install it with: agents install $name"
+}
+
+case ${1:-} in
+'')
+    agents_table
+    echo
+    echo "b-* wrappers (fish) ask [y/N] before adding each tool's official bypass flags."
+    echo "Manage: agents install|update|login|remove|new|retire <name>   (agents --help)"
+    ;;
+install)
+    shift
+    (($#)) || { ui_interactive && set -- "$(pick_agent "Install which agent?" missing)"; } || usage 2
+    for name; do
+        need_known "$name"
+        agent_install "$name" && { _agent_hook "$name" configure || true; }
+        config_agents add "$name"
+        target="$(agent_get "$name" herdr)"
+        [[ $target != - ]] && have herdr && agent_installed "$name" && herdr integration install "$target" >/dev/null 2>&1 || true
+        guide="$(agent_get "$name" guide)"
+        if [[ $guide != - ]]; then
+            guide="$(_expand_home "$guide")"
+            if [[ ! -e $guide || $(readlink "$guide" 2>/dev/null) == "$DOTFILES_DIR/agents/AGENTS.global.md" ]]; then
+                link_file "$DOTFILES_DIR/agents/AGENTS.global.md" "$guide"
+            fi
+        fi
+        login="$(agent_get "$name" login)"
+        [[ -n $login && $login != - ]] && step "sign in: $login"
+    done
+    ;;
+update)
+    shift
+    exec "$DOTFILES_DIR/bin/update-all" "${@:-agents}"
+    ;;
+login) cmd_login "${2:-}" ;;
+herdr) herdr_hooks ;;
+remove | uninstall) cmd_remove "${2:-}" "${3:-}" ;;
+new) cmd_new "${2:-}" ;;
+retire) cmd_retire "${2:-}" ;;
+restore) cmd_restore "${2:-}" ;;
+-h | --help) usage ;;
+*) usage 2 ;;
+esac

@@ -1,0 +1,26 @@
+# ─── Machine-specific / secrets ───
+config.env
+config.env.*
+!config.env.example
+secrets.env
+*.pem
+*.key
+
+# ─── Backups made by link_file / installers ───
+.dotfiles-backup/
+*.bak
+*.bak.*
+
+# ─── Agent scratch ───
+.claude/settings.local.json
+.claude/worktrees/
+.worktrees/
+.remember/
+
+# ─── OS / editors ───
+.DS_Store
+*.swp
+*~
+
+# ─── Run state (install.sh --status) ───
+.state/
