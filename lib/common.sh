@@ -112,9 +112,44 @@ confirm() {
 
 # ─── Config ───
 # config.env is git-ignored KEY=VALUE (bash syntax). Defaults live here so a
-# missing key never breaks a stage.
+# missing key never breaks a stage. Any key in CONFIG_KEYS may also be passed
+# as a caller environment variable; installation saves nonempty overrides.
+CONFIG_KEYS=(
+    TARGET_USER GIT_NAME GIT_EMAIL GITHUB_TOKEN
+    PROFILE TIMEZONE LOCALE HOSTNAME_FQDN LOGIN_SHELL LOGIN_GREETING CLOUD_INIT_LOCK SWAP_SIZE_GB ZRAM
+    SSH_HARDEN SSH_DISABLE_ROOT OPEN_MOSH F2B_IGNORE_IPS
+    TAILSCALE TAILSCALE_SSH TAILSCALE_AUTHKEY TUNNEL_DEFAULT
+    FULL_CONTROL
+    DOCKER DOCKER_SUDOLESS
+    AGENT_SANDBOX GVISOR
+    ACME_EMAIL PHP WWW_DIR
+    PROJECTS_DIR FLUTTER_LINUX_DESKTOP AGENTS CLEANUP_TIMER DESKTOP_APPS
+    HERMES HERMES_DOMAIN HERMES_DASHBOARD_USER HERMES_DASHBOARD_PORT HERMES_DASHBOARD_PASSWORD HERMES_ALLOW_IPS HERMES_CLOUDFLARE_ONLY
+    TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS
+)
+# Snapshot exported caller values once, before config defaults are loaded.
+# Repeated load_config calls must not mistake those defaults for overrides.
+declare -A CONFIG_ENV_OVERRIDES=()
+while IFS= read -r __config_env_key; do
+    for __config_key in "${CONFIG_KEYS[@]}"; do
+        if [[ $__config_env_key == "$__config_key" && -n ${!__config_key:-} ]]; then
+            CONFIG_ENV_OVERRIDES[$__config_key]=${!__config_key}
+        fi
+    done
+done < <(compgen -e)
+unset __config_env_key __config_key
+
+config_is_secret() {
+    case $1 in
+    GITHUB_TOKEN | TAILSCALE_AUTHKEY | HERMES_DASHBOARD_PASSWORD | TELEGRAM_BOT_TOKEN) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
 load_config() {
     local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    local __k
+
     # Not `set -a`: config.env holds tokens (Telegram, Tailscale, GitHub), and
     # exporting them would hand them to every child: vendor installers, npm
     # postinstalls, sandboxed commands. Only the keys below are exported.
@@ -122,10 +157,22 @@ load_config() {
         # shellcheck disable=SC1090
         source "$file"
     fi
+    [[ -n ${CONFIG_ENV_OVERRIDES[TARGET_USER]:-} ]] && TARGET_USER=${CONFIG_ENV_OVERRIDES[TARGET_USER]}
 
     if [[ -z ${TARGET_USER:-} ]]; then
-        if is_root; then TARGET_USER="${SUDO_USER:-}"; else TARGET_USER="$(id -un)"; fi
+        if is_root; then
+            TARGET_USER="${SUDO_USER:-}"
+            if [[ -z $TARGET_USER ]]; then
+                local repo_owner
+                repo_owner="$(os_owner "$DOTFILES_DIR")"
+                repo_owner=${repo_owner%%:*}
+                [[ -n $repo_owner && $repo_owner != root ]] && TARGET_USER=$repo_owner
+            fi
+        else
+            TARGET_USER="$(id -un)"
+        fi
     fi
+    [[ -z ${TARGET_USER:-} ]] && die "TARGET_USER must be set in config.env or environment when running directly as root"
     [[ $TARGET_USER == root ]] && die "TARGET_USER must be a regular user, not root"
 
     if [[ $TARGET_USER == "$(id -un)" ]]; then
@@ -146,6 +193,13 @@ load_config() {
         HOME=$real_home
     fi
 
+    for __k in "${!CONFIG_ENV_OVERRIDES[@]}"; do
+        printf -v "$__k" '%s' "${CONFIG_ENV_OVERRIDES[$__k]}"
+    done
+
+    # Never let secret keys stay exported in the environment for child installers.
+    export -n GITHUB_TOKEN TAILSCALE_AUTHKEY HERMES_DASHBOARD_PASSWORD TELEGRAM_BOT_TOKEN 2>/dev/null || true
+
     : "${PROFILE:=$(os_default_profile)}"
     [[ $PROFILE == workstation ]] && PROFILE=desktop # old name
     [[ $PROFILE == server || $PROFILE == desktop ]] || die "PROFILE must be server or desktop (got '$PROFILE')"
@@ -161,10 +215,10 @@ load_config() {
     : "${TAILSCALE:=false}"
     : "${TAILSCALE_SSH:=false}"
     : "${TUNNEL_DEFAULT:=auto}"
-    # FULL_CONTROL: a playground box. Passwordless sudo for TARGET_USER, and
-    # Claude + Codex in YOLO mode by default. Outside protection (SSH keys,
-    # firewall, fail2ban, dashboard auth) is unchanged.
-    # Empty = on for a server (the playground VPS), off for a desktop/laptop.
+    # FULL_CONTROL: unattended mode inside the machine. Passwordless sudo for
+    # TARGET_USER, and Claude + Codex skip permission prompts by default.
+    # Perimeter protection (SSH keys, firewall, fail2ban, dashboard auth) is unchanged.
+    # Empty = on for a server, off for a desktop/laptop.
     if [[ -z ${FULL_CONTROL:-} ]]; then
         FULL_CONTROL=false
         [[ $PROFILE == server ]] && FULL_CONTROL=true
@@ -184,6 +238,7 @@ load_config() {
     : "${PROJECTS_DIR:=$TARGET_HOME/projects}"
     : "${WWW_DIR:=/srv/www}"
     : "${AGENTS:=claude codex opencode omp grok muse herdr}"
+    : "${DESKTOP_APPS:=}"
     : "${HERMES:=true}"
     : "${HERMES_DOMAIN:=}"
     : "${HERMES_DASHBOARD_USER:=$TARGET_USER}"
@@ -204,18 +259,28 @@ load_config() {
     fi
 
     export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE
+    # Non-secret settings follow root stages and clean user-side stage launches.
+    for __k in "${CONFIG_KEYS[@]}"; do
+        config_is_secret "$__k" || { [[ -v $__k ]] && export "$__k=${!__k}"; }
+    done
+    return 0
 }
 
 # ─── Users ───
 # run_as_user <cmd...> — run as TARGET_USER with a clean login-like env.
 # Uses runuser (util-linux) rather than sudo so it behaves the same under
-# Ubuntu 26.04's sudo-rs.
+# newer Ubuntu releases' sudo-rs.
 run_as_user() {
     if [[ $(id -un) == "$TARGET_USER" ]]; then
         "$@"
         return
     fi
-    local uid
+    local uid key
+    local -a config_env=()
+    for key in "${CONFIG_KEYS[@]}"; do
+        config_is_secret "$key" && continue
+        [[ -v $key ]] && config_env+=("$key=${!key}")
+    done
     uid="$(id -u "$TARGET_USER")"
     runuser -u "$TARGET_USER" -- env -i \
         HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
@@ -224,6 +289,7 @@ run_as_user() {
         XDG_RUNTIME_DIR="/run/user/$uid" \
         DOTFILES_DIR="$DOTFILES_DIR" DOTFILES_CONFIG="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}" \
         ASSUME_YES="${ASSUME_YES:-0}" RENEW="${RENEW:-0}" PROFILE="${PROFILE:-}" \
+        "${config_env[@]}" \
         "$@"
 }
 

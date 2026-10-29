@@ -6,6 +6,14 @@
 #   hermes-up status     show both services
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+case ${1:-} in
+-h | --help)
+    sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+'' | status) (($# <= 1)) || die "usage: hermes-up [status | --help]" ;;
+*) die "unknown argument: $1 (see hermes-up --help)" ;;
+esac
 load_config
 
 hermes="$(command -v hermes)" || die "hermes not on PATH — run: ./install.sh hermes"
@@ -40,4 +48,4 @@ sudo systemctl restart hermes-dashboard
 
 ok "gateway + dashboard running"
 step "logs: journalctl -u hermes-gateway -f   ·   journalctl -u hermes-dashboard -f"
-step "message your bot on Telegram to test; approve strangers with: hermes pairing approve telegram <code>"
+step "message your bot on Telegram to test; approve only recognized pairing requests with: hermes pairing approve telegram <code>"

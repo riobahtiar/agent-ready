@@ -22,7 +22,7 @@ dev at vps in shop/s/components on feat/cart [!☡+]       ✘ 1  4.2s  ⎇ work
 | Section | Shows | Our tuning |
 |---|---|---|
 | user | `dev` | cyan; **bold red when root** |
-| host | short hostname | bold yellow over SSH (the theme's red reads like an alarm on a box you always SSH into) |
+| host | short hostname | bold yellow over SSH (the theme's default red looks like an error on a server you always access via SSH) |
 | directory | where you are | **project-relative inside `~/projects`**: `shop/s/components` instead of `~/p/s/s/components` |
 | git | branch + state | `✓` clean · `!` dirty · `☡` untracked · `+` ahead (unpushed agent work) · `-` behind · `↩` stash |
 | indicator | `↪` | red when the last command failed |
@@ -54,7 +54,7 @@ Markers are searched from the current directory up to the repo root (or `~`).
 Choose and order sections:
 
 ```fish
-set -g CLOUD_PROMPT_RIGHT status duration git worktree bun go   # in prompt.fish
+set -g CLOUD_PROMPT_RIGHT status duration worktree bun go   # in prompt.fish
 ```
 
 ### Greeting and title

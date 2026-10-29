@@ -39,12 +39,10 @@ claude_update() { claude update; }
 claude_configure() {
     have jq || return 0
     local settings="$HOME/.claude/settings.json" tmp
-    local filter='.cleanupPeriodDays //= 30'
+    local filter='.cleanupPeriodDays //= 30 | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
     if is_true "${FULL_CONTROL:-false}"; then
-        # Full control: start in bypass mode (YOLO); no credential deny rules.
+        # Permission bypass is separate from sandboxing and credential rules.
         filter+=' | .permissions.defaultMode //= "bypassPermissions"'
-    else
-        filter+=' | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
     fi
     is_true "${AGENT_SANDBOX:-true}" && filter+=' | .sandbox.enabled //= true'
     mkdir -p "$HOME/.claude"
@@ -54,6 +52,6 @@ claude_configure() {
     tmp="$(mktemp "$(dirname "$settings")/.settings.XXXXXX")"
     jq --argjson deny '["Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.gnupg/**)", "Read(~/.cloudflared/**)",
         "Read(~/.config/rclone/**)", "Read(~/.config/gh/**)", "Read(~/.config/secrets.env)", "Read(~/.hermes/.env)",
-        "Read(~/.dotfiles/config.env)", "Read(~/.codex/auth.json)", "Read(~/.git-credentials)", "Read(~/.netrc)",
+        "Read(~/.dotfiles/config.env)", "Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)", "Read(~/.git-credentials)", "Read(~/.netrc)",
         "Read(~/.npmrc)", "Read(~/.docker/config.json)"]' "$filter" "$settings" >"$tmp" && mv "$tmp" "$settings"
 }

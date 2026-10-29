@@ -11,6 +11,7 @@
 #   45-cloud.toml      aws-cli s5cmd rclone wrangler cf opentofu
 #   46-sandbox.toml    srt (agent sandbox) devcontainer
 #   47-delivery.toml   hurl oha duckdb usql process-compose sops trivy …
+#   50-quality.toml    shellcheck shfmt hadolint gitleaks
 #   60-network.toml    tunnels: cloudflared zrok
 #
 # ~/.config/mise/config.toml is NOT managed here: it's yours (and Omarchy's),
@@ -22,7 +23,7 @@
 # Honor .nvmrc / .node-version / .python-version in projects.
 idiomatic_version_file_enable_tools = ["node", "python"]
 # Limit concurrent installs and compiles so they don't starve running agents.
-jobs = 2
+jobs = 4
 # Only this repo is trusted up front. A project's mise.toml can run code
 # ([env] exec templates, _.source scripts, hooks), so trusting all of
 # ~/projects would make `git clone` + `cd` code execution. Review a cloned

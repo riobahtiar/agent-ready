@@ -2,7 +2,7 @@
 # stage-user: root
 # stage-os: linux+systemd
 # stage-profile: all
-# stage-desc: Docker Engine + compose/buildx (official repo, distro fallback), localhost-only port binds
+# stage-desc: Docker Engine + compose/buildx (official repo, distro fallback), loopback defaults for new bridge networks
 set -Eeuo pipefail
 source "$DOTFILES_DIR/lib/common.sh"
 source "$DOTFILES_DIR/lib/pkg.sh"
@@ -66,6 +66,14 @@ if ! systemctl cat docker.service >/dev/null 2>&1; then
     exit 0
 fi
 
+# Docker documents an L2 localhost-publishing exposure in Engine versions <28.
+# https://docs.docker.com/engine/network/port-publishing/
+engine_version="$(dockerd --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+engine_major=${engine_version%%.*}
+if [[ $engine_major =~ ^[0-9]+$ ]] && ((engine_major < 28)); then
+    warn "Docker $engine_version: upgrade to Engine 28+ before relying on localhost-published ports being private from other L2 hosts"
+fi
+
 if is_true "${GVISOR:-false}" && ! have runsc; then
     log "gVisor (runsc): a user-space kernel for untrusted containers (sandbox box)"
     if [[ $OS_FAMILY == debian ]]; then
@@ -94,11 +102,10 @@ if ! as_root cmp -s "$desired" "$daemon_json" 2>/dev/null; then
     if dockerd --validate --config-file "$desired" >/dev/null 2>&1; then
         [[ -f $daemon_json ]] && as_root cp "$daemon_json" "$daemon_json.bak"
         install_file "$desired" "$daemon_json"
-        # The first restart stops running containers (live-restore isn't on
-        # yet), and "ip": 127.0.0.1 re-binds published ports to loopback when
-        # they come back. Never do that to a busy box without asking.
+        # A restart can disrupt running containers. New bridge-network defaults
+        # do not migrate existing networks or override explicit host bindings.
         running="$( (as_root docker ps -q 2>/dev/null || true) | wc -l | xargs)" # daemon may be down
-        if ((running > 0)) && ! { has_tty && ASSUME_YES=0 confirm "  Restart Docker now? $running running container(s) will stop and come back (if they have a restart policy) with ports re-bound to 127.0.0.1 [y/N] "; }; then
+        if ((running > 0)) && ! { has_tty && ASSUME_YES=0 confirm "  Restart Docker now? $running container(s) may stop; existing networks/bindings are not migrated [y/N] "; }; then
             stage_incomplete "daemon.json installed, but Docker NOT restarted ($running containers running) — restart it when convenient: sudo systemctl restart docker"
         elif as_root systemctl restart docker; then
             ok "installed (log rotation, 127.0.0.1 default bind, live-restore$(have runsc && echo ', runsc runtime'))"
@@ -111,6 +118,7 @@ if ! as_root cmp -s "$desired" "$daemon_json" 2>/dev/null; then
     else
         warn "dockerd rejected the daemon config — keeping the current one"
         dockerd --validate --config-file "$desired" || true
+        stage_incomplete "Docker configuration not applied; default-network-opts requires Engine 24+ — review the validation error"
     fi
 fi
 rm -f "$desired" "$desired.new"

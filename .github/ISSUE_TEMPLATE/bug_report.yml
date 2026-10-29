@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report a bug in setup stages, CLI commands, shell config, or modules
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, check the **[Setup & Installation FAQ](https://github.com/riobahtiar/dotfiles-cloud/blob/main/docs/16-faq.md)** and **[Troubleshooting Guide](https://github.com/riobahtiar/dotfiles-cloud/blob/main/docs/14-troubleshooting.md)**.
+        > **Privacy & Security:** Redact real domains, public IP addresses, usernames, and tokens before pasting logs. For security vulnerabilities, use [Private Vulnerability Reporting](https://github.com/riobahtiar/dotfiles-cloud/security/advisories/new) instead.
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Machine Profile
+      options:
+        - server (setup-server.sh)
+        - desktop (setup-desktop.sh)
+        - bootstrap.sh (initial root setup)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System & Architecture
+      description: Output of `uname -sm` and `/etc/os-release` (`PRETTY_NAME`) or `sw_vers` on macOS
+      placeholder: "e.g., Ubuntu 24.04 / 26.04 LTS (x86_64), Arch / Omarchy, macOS 15 (arm64), WSL2 Ubuntu"
+    validations:
+      required: true
+
+  - type: input
+    id: component
+    attributes:
+      label: Affected Stage, Command, or Module
+      placeholder: "e.g., stages/20-security.sh, bin/site, agents.d/claude.sh"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Exact commands and relevant (redacted) `config.env` or environment settings
+      placeholder: |
+        1. Set `HERMES=false` in `config.env`
+        2. Run `./setup-server.sh --changed`
+        3. Observe error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior & Logs
+      description: Paste redacted terminal output (`./install.sh --status` or `doctor` output helps)
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true

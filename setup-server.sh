@@ -9,6 +9,16 @@
 #
 # Fresh VPS as root? Run bootstrap.sh first (creates your user). docs/01-first-setup.md
 set -eu
+for arg in "$@"; do
+    case $arg in
+    -h | --help)
+        sed -n '2,/^set -/p' "$0" | sed '$d; s/^# \{0,1\}//'
+        printf '\nInstaller flags:\n'
+        sed -n '2,/^$/p' "$(dirname "$0")/install.sh" | sed 's/^# \{0,1\}//'
+        exit 0
+        ;;
+    esac
+done
 if [ "$(uname -s)" = Darwin ]; then
     echo "setup-server.sh is for Linux servers — on a Mac use ./setup-desktop.sh" >&2
     exit 1

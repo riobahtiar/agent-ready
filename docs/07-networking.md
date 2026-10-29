@@ -2,13 +2,15 @@
 
 ## Tailscale
 
-Tailscale puts the VPS, your laptop and your phone on one private WireGuard
+Tailscale puts your server, laptop, and phone on one private WireGuard mesh
 network (a "tailnet"). You get:
 
-- SSH to `cloud` from anywhere without exposing anything new (optionally
-  **Tailscale SSH**: no keys to manage).
+- SSH to your server from anywhere without exposing a public SSH port (optionally
+  using **Tailscale SSH** with no SSH keys to manage).
 - Private HTTPS URLs for dev servers: `tunnel 5173 tailscale`.
-- The Hermes dashboard reachable only from your devices (see [11](11-hermes-telegram.md)).
+- Private access to internal tools or IP-allowlisted endpoints (see
+  [11 Hermes + Telegram](11-hermes-telegram.md) for how Tailscale interacts with
+  Let's Encrypt and the Hermes dashboard).
 
 ### Turn it on
 
@@ -50,8 +52,8 @@ tunnel 5173                     # default provider
 tunnel 3000 cloudflare
 tunnel 3000 cfnamed dev.example.com
 tunnel ls                       # running tunnels + URLs
-tunnel stop 3000                # or: tunnel stop all
-tunnel logs 3000
+tunnel stop <port|all> [provider] # e.g. tunnel stop 3000 cloudflare
+tunnel logs 3000 [provider]
 ```
 
 Background tunnels keep a pid, log and URL in `~/.local/state/dotfiles/tunnels/`.
@@ -71,7 +73,7 @@ reboots until you `tunnel stop` them.
 
 The [awesome-tunneling](https://github.com/anderspitman/awesome-tunneling)
 list recommends Cloudflare Tunnel for most people. For self-hosted production
-it recommends frp and Pangolin, and you don't need either on a VPS that already has a
+it recommends frp and Pangolin, and you don't need either on a server that already has a
 public IP and nginx. Tailscale covers private access, zrok is the strongest
 open-source public option, and Pinggy is the no-install fallback. To add another
 (ngrok, localhost.run, bore…), copy `tunnels.d/_template.sh`: define `_ready`

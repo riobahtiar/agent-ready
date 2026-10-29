@@ -3,9 +3,9 @@
 ## Connect
 
 ```sshconfig
-# laptop ~/.ssh/config
+# local ~/.ssh/config
 Host cloud
-    HostName <vps-ip or cloud.<tailnet>.ts.net>
+    HostName 203.0.113.10    # or cloud.<tailnet>.ts.net
     User deploy
     ServerAliveInterval 30
     ControlMaster auto
@@ -17,9 +17,9 @@ Host cloud
 
 - **mosh** survives sleep and network changes: `OPEN_MOSH=true` in config.env,
   `./install.sh security`, then `mosh cloud`.
-- **Tailscale** gives the VPS a private name and lets you skip public SSH
+- **Tailscale** gives the server a private name and lets you skip public SSH
   entirely: [07 Networking](07-networking.md).
-- Ghostty installs its terminfo on the VPS automatically (`ssh-terminfo`).
+- Ghostty installs its terminfo on the server automatically (`ssh-terminfo`).
 
 ## Work inside herdr
 
@@ -29,7 +29,7 @@ sidebar shows each agent's state (working, waiting for you, done).
 ```fish
 herdr                  # attach (creates the session the first time)
 # ctrl+b then q        # detach, everything keeps running
-herdr --remote cloud   # from the laptop: thin client, panes stay on the VPS
+herdr --remote cloud   # from your laptop: thin client, panes stay on the server
 ```
 
 tmux is installed as a fallback.
@@ -74,10 +74,10 @@ anything listening publicly.
 
 ## Editors
 
-- **VS Code / Cursor / Windsurf**: Remote-SSH to `cloud`. The server part runs
-  on the VPS (~300–500 MB RAM).
+- **VS Code / Cursor / Windsurf**: Remote-SSH to `cloud`. The remote server process
+  runs on your server (~300–500 MB RAM).
 - **Zed**: `zed ssh://cloud/~/projects/app`, a lighter remote server.
-- **Neovim** on the box: `nvim` (installed by mise).
+- **Neovim** on the server: `nvim` (installed by mise).
 
 ## Get pinged when an agent finishes
 
@@ -90,5 +90,5 @@ For Claude Code hooks, see [06 Tools and agents](06-tools-and-agents.md#get-ping
 ## Sharing server resources
 
 - One heavy build at a time; stop dev servers and watchers you started.
-- `free -h` before something big. The box summary at login shows memory.
+- `free -h` before starting large builds. The login summary (`motd`) shows memory usage.
 - `cleanup procs` finds orphaned MCP servers and headless browsers.

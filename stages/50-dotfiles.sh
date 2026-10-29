@@ -50,15 +50,19 @@ log "git identity"
 git_local="$HOME/.config/git/local"
 if [[ -n ${GIT_NAME:-} && $GIT_NAME != "Your Name" ]]; then
     git config --file "$git_local" user.name "$GIT_NAME"
+elif [[ -z $(git config user.name 2>/dev/null) ]]; then
+    warn "GIT_NAME not set in config.env — set it, or: git config --file $git_local user.name 'Your Name'"
+fi
+if [[ -n ${GIT_EMAIL:-} && $GIT_EMAIL != "you@example.com" ]]; then
     git config --file "$git_local" user.email "$GIT_EMAIL"
-    ok "$GIT_NAME <$GIT_EMAIL>"
-else
-    warn "GIT_NAME not set in config.env — set it, or: git config --file $git_local user.name '…'"
+elif [[ -z $(git config user.email 2>/dev/null) ]]; then
+    warn "GIT_EMAIL not set in config.env — set it, or: git config --file $git_local user.email 'you@example.com'"
 fi
 
 log "bash hooks (agents and scripts run bash even though fish is the login shell)"
 add_line() {
     local file=$1 line=$2
+    [[ -L $file ]] && return 0
     touch "$file"
     grep -qxF "$line" "$file" || printf '\n# ~/.dotfiles\n%s\n' "$line" >>"$file"
 }

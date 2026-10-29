@@ -9,6 +9,13 @@ source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 source "$DOTFILES_DIR/lib/agents.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
 source "$DOTFILES_DIR/lib/configure.sh"
+
+case ${1:-} in
+-h | --help)
+    printf 'Usage: vps [docs]\n\nOpen the management menu, or browse the guides with docs.\n'
+    exit 0
+    ;;
+esac
 load_config
 
 ui_interactive || die "vps is a menu for humans — scripts and agents: use doctor, site, cleanup, update-all directly"
@@ -78,14 +85,15 @@ menu_hermes() {
 
 menu_logs() {
     local choice
-    choice="$(ui_choose "Follow which log? (Ctrl-C to stop)" \
-        "errors|Everything at warning level or worse (this boot)" \
-        "nginx|nginx error log" \
-        "docker|Docker daemon" \
-        "ssh|SSH logins" \
-        "fail2ban|fail2ban bans" \
-        "cleanup|Last weekly cleanup run" \
-        "back|Back")" || return 0
+    local -a items=(
+        "errors|Everything at warning level or worse (this boot)"
+        "docker|Docker daemon"
+        "cleanup|Last weekly cleanup run"
+    )
+    if [[ $PROFILE != desktop ]]; then
+        items+=("nginx|nginx error log" "ssh|SSH logins" "fail2ban|fail2ban bans")
+    fi
+    choice="$(ui_choose "Follow which log? (Ctrl-C to stop)" "${items[@]}" "back|Back")" || return 0
     case $choice in
     errors) run journalctl -b -p warning -f -n 50 ;;
     nginx) run sudo tail -n 50 -F /var/log/nginx/error.log ;;
@@ -140,7 +148,7 @@ menu_settings() {
         "prompt|Edit the fish prompt (easy-eel settings)" \
         "back|Back")" || return 0
     case $choice in
-    wizard) configure_wizard && step "apply with: ./install.sh <stage>  (vps → Settings → Re-apply)" ;;
+    wizard) configure_wizard && step "apply with: ./install.sh --changed" ;;
     secrets)
         file="$HOME/.config/secrets.env"
         [[ -f $file ]] || install -m 600 "$DOTFILES_DIR/secrets.env.example" "$file"
@@ -183,20 +191,23 @@ menu_docs() {
 trap 'echo >&2' INT
 while :; do
     up="$(uptime -p 2>/dev/null | sed 's/^up //' || true)"
+    items=(
+        "doctor|Health check (doctor)"
+        "update|Update agents and tools (update-all)"
+        "cleanup|Clean up disk · worktrees · processes (cleanup)"
+        "agents|Agents: versions · sign in · update"
+        "tunnel|Share a dev server: tunnels (tunnel)"
+        "sandbox|Sandboxes for agents and untrusted code (sandbox)"
+        "cloud|Cloud CLIs: AWS · Cloudflare · rclone · GitHub sign-in"
+        "logs|Logs"
+        "settings|Settings · API keys · install / renew"
+        "docs|Guides (how-to docs)"
+    )
+    if [[ $PROFILE != desktop ]]; then
+        items+=("site|Websites: add · remove · logs (site)" "hermes|Hermes: Telegram · dashboard")
+    fi
     choice="$(ui_choose "$(hostname -s)${up:+ · $up} · $(df -h / | awk 'NR==2 {print $4}') free" \
-        "doctor|Health check (doctor)" \
-        "update|Update agents and tools (update-all)" \
-        "cleanup|Clean up disk · worktrees · processes (cleanup)" \
-        "site|Websites: add · remove · logs (site)" \
-        "agents|Agents: versions · sign in · update" \
-        "hermes|Hermes: Telegram · dashboard" \
-        "tunnel|Share a dev server: tunnels (tunnel)" \
-        "sandbox|Sandboxes for agents and untrusted code (sandbox)" \
-        "cloud|Cloud CLIs: AWS · Cloudflare · rclone · GitHub sign-in" \
-        "logs|Logs" \
-        "settings|Settings · API keys · install / renew" \
-        "docs|Guides (how-to docs)" \
-        "quit|Quit")" || break
+        "${items[@]}" "quit|Quit")" || break
     case $choice in
     doctor) run "$DOTFILES_DIR/bin/doctor" ;;
     update) run "$DOTFILES_DIR/bin/update-all" ;;

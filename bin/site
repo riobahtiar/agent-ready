@@ -19,12 +19,15 @@ source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 source "$DOTFILES_DIR/lib/nginx.sh"
 source "$DOTFILES_DIR/lib/ui.sh"
 source "$DOTFILES_DIR/lib/net.sh"
-load_config
 
 usage() {
     sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
+
+[[ ${1:-} == -h || ${1:-} == --help ]] && usage
+load_config
+have nginx || die "nginx is not installed (site is for the server profile: ./setup-server.sh web)"
 
 # The path lands in `root …;` of the vhost: no spaces, quotes, ; { } or newlines.
 valid_root() { [[ $1 =~ ^/[A-Za-z0-9._@+/-]+$ ]] || die "unsupported characters in path (letters, digits, . _ @ + - / only): $1"; }

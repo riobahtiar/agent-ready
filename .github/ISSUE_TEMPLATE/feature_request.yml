@@ -1,0 +1,41 @@
+name: Feature / Module Request
+description: Propose a new agent module, tunnel provider, CLI improvement, or OS support enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent module (agents.d/)
+        - Tunnel provider (tunnels.d/)
+        - CLI command (bin/)
+        - Provisioning stage (stages/)
+        - Shell / prompt / mise tools (home/)
+        - Multi-OS / distro support (lib/os.sh, lib/pkg.sh)
+        - Documentation (docs/)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What workflow or limitation are you trying to solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe how it should work (both interactive menu and non-interactive CLI flag forms if applicable)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Can this already be configured via `config.env`, `~/.config/mise/config.toml`, or `agents new`?

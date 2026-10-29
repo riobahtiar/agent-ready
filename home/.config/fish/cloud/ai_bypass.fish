@@ -125,7 +125,7 @@ function b-hermes --description "Launch hermes with optional permission bypass"
 end
 
 # Forward tab-completion to each underlying agent CLI (fish --wraps).
-# Registered here because config.fish sources functions/custom/*.fish at startup;
+# Registered here because config.fish sources ~/.config/fish/cloud/*.fish at startup;
 # completions/<cmd>.fish only auto-load when the command name matches the file.
 complete -c b-claude -w claude -d "Claude Code (optional permission bypass)"
 complete -c b-codex -w codex -d "Codex (optional sandbox bypass)"

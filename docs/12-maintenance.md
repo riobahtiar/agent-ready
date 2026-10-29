@@ -23,9 +23,9 @@
   agents and mise tools upgraded in place, then composer/uv/gh extensions, then
   `site renew` (every vhost re-rendered from the current templates) and
   `certbot renew`. Use it after a long gap, or when you're not sure what
-  drifted. Safe to run on a live box; agents keep running.
+  drifted. Safe to run on a running server; active agents keep running.
 
-Interactive `./install.sh` on a set-up machine offers exactly these choices.
+Interactive `./install.sh` on a configured machine offers exactly these choices.
 Without a terminal it refuses to re-run silently and tells you to pick
 `--changed`, `--all` or `--renew`.
 

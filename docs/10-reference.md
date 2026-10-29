@@ -2,9 +2,25 @@
 
 ## config.env
 
-`./install.sh --configure` writes it; this is every key. Empty means "use the
-default". Change a value, then `./install.sh --changed`, which re-runs every
-stage, because config.env is an input to all of them.
+`./install.sh --configure` writes `config.env`; the table below lists every key.
+An empty value means "use the default". Because `config.env` is an input to every
+stage, editing `config.env` marks all stages as changed: `./install.sh --changed`
+re-runs all applicable stages, whereas `./install.sh <stage>` (e.g.
+`./install.sh hermes`) re-runs just one stage.
+
+Any `config.env` key can also be passed as an exported environment variable
+override (for example, `HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`).
+On installation runs, explicit nonempty exported configuration overrides are
+**saved to the private `config.env` before sudo escalation**, so later runs retain
+them and `--changed` detects updated settings. Empty exported values do not
+override configuration. `--status`, `--list`, and `--help` do not save overrides;
+`--configure` saves them only if you proceed into installation after the wizard.
+Machine commands use environment overrides for that invocation; bootstrap seeds
+the new configuration.
+Secret keys (`GITHUB_TOKEN`, `TAILSCALE_AUTHKEY`, `HERMES_DASHBOARD_PASSWORD`,
+`TELEGRAM_BOT_TOKEN`) are unexported by `load_config` so child processes do not
+inherit them under those names. Tool stages explicitly provide `MISE_GITHUB_TOKEN`
+to mise when needed for authenticated GitHub downloads.
 
 | Key | Default | Used by |
 |---|---|---|
@@ -32,23 +48,35 @@ stage, because config.env is an input to all of them.
 | `PROJECTS_DIR` | ~/projects | 05, prompt, cleanup |
 | `FLUTTER_LINUX_DESKTOP` | false | 05, 60 |
 | `AGENTS` | claude codex opencode omp grok muse herdr | 70 (module names in agents.d/) |
+| `DESKTOP_APPS` | empty (install none) | 85, desktop only: whitespace-separated IDs `orbstack tablepro zed ghostty tailscale chatgpt claude helium cloudflare-warp obsidian mole`; select in `./install.sh --configure` or edit private `config.env`; unselecting does not uninstall |
 | `CLEANUP_TIMER` | true on server, false on desktop | 90 |
-| `HERMES`, `HERMES_DOMAIN`, `HERMES_DASHBOARD_USER`, `HERMES_DASHBOARD_PORT` | true, —, `$TARGET_USER`, 9119 | 80 |
+| `HERMES`, `HERMES_DOMAIN`, `HERMES_DASHBOARD_USER`, `HERMES_DASHBOARD_PORT` | true, —, `$TARGET_USER`, 9119 | 80 (leaving `HERMES_DOMAIN` empty or `HERMES=false` skips publishing the web dashboard) |
 | `HERMES_DASHBOARD_PASSWORD` | prompted | 80 (only the scrypt hash is stored) |
 | `HERMES_ALLOW_IPS` | — | 80: nginx allowlist |
 | `HERMES_CLOUDFLARE_ONLY` | false | 80: accept only Cloudflare's IP ranges (use with Cloudflare Access) |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` | — | 80 → `~/.hermes/.env`, `notify` |
 
-Environment-only knobs: `HERMES_RESET_PASSWORD=1 ./install.sh hermes`,
-`ASSUME_YES=1` (= `-y`), `DOTFILES_CONFIG=/path` (another config file),
-`CLOUD_UI=plain` (no gum), `SANDBOX_IMAGE`.
+Additional environment knobs:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DOTFILES_REPO` | `https://github.com/riobahtiar/dotfiles-cloud.git` | `bootstrap.sh`: repository URL to clone (`--repo`) |
+| `DOTFILES_BRANCH` | `main` | `bootstrap.sh`: branch to clone (`--branch`) |
+| `BOOTSTRAP_INSTALL` | `0` | `bootstrap.sh`: set to `1` to run `setup-server.sh` immediately (`--install`) |
+| `DOTFILES_CONFIG` | `~/.dotfiles/config.env` | Path to an alternate `config.env` file |
+| `ASSUME_YES` | `0` | Set to `1` for non-interactive confirmation (`-y` / `--yes`) |
+| `CLOUD_UI` | auto | Set to `plain` to force numbered prompts instead of `gum` |
+| `HERMES_RESET_PASSWORD` | `0` | Set to `1` with `./install.sh hermes` to prompt for a new dashboard password |
+| `SANDBOX_IMAGE` | `mcr.microsoft.com/devcontainers/base:ubuntu` | Default container image for `sandbox box` |
+| `SANDBOX_CPUS` | `min(2, host_cpus)` | CPU limit for `sandbox box` |
+| `SANDBOX_MEMORY` | `2g` | Memory limit for `sandbox box` |
 
 ## Secrets: where they live
 
 | File | Holds | Mode |
 |---|---|---|
 | `~/.dotfiles/config.env` | machine settings, Telegram token, Tailscale key | 600, git-ignored |
-| `~/.config/secrets.env` | API keys for shells and agents (`ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN`, …) | 600 |
+| `~/.config/secrets.env` | API keys for shells and agents (`ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN`, `TELEGRAM_BOT_TOKEN`, `NOTIFY_TELEGRAM_CHAT`, …) | 600 |
 | `~/.hermes/.env` | Hermes keys, dashboard hash and secret, Telegram | 600 |
 | each tool's own store | `~/.aws`, `~/.config/rclone`, `~/.cloudflared`, wrangler/cf/gh logins, agent OAuth | tool-managed |
 
@@ -67,14 +95,15 @@ lib/
   stages.sh            stage headers, applicability, run state, change detection
   ui.sh                menus/prompts (gum, plain fallback)
   configure.sh         config.env wizard
+  desktop-apps.sh      optional desktop app registry, platform checks and installs (stage 85)
   agents.sh            agent registry (loads agents.d/)
   tunnels.sh           tunnel registry (loads tunnels.d/)
   nginx.sh, net.sh     vhosts + certs; local ports
 agents.d/<name>.sh     one module per agent CLI (_template.sh, retired/)
 tunnels.d/<id>.sh      one module per tunnel provider (_template.sh)
-bin/                   vps doctor update-all cleanup site tunnel sandbox agents notify hermes-up
+bin/                   vps doctor update-all cleanup site tunnel sandbox agents notify hermes-up motd
 home/                  mirrored into ~ as per-file symlinks (fish, mise conf.d, git, starship, srt policy)
-agents/AGENTS.global.md   the machine guide every agent reads
+agents/AGENTS.global.md   the machine guide linked into agents that support global instruction files (claude, codex, opencode)
 nginx/ system/ systemd/ shell/   fragments the stages install
 docs/                  these guides
 .state/                run state (git-ignored)
@@ -98,9 +127,9 @@ successful run: the stage file, every `$DOTFILES_DIR/…` path it mentions,
 ## Module APIs
 
 **Agents** (`agents.d/<name>.sh`): `agent_define <name> title= bin= wrapper=
-herdr= guide= login= paths= config= os= managed=` plus `<name>_install`
-(required), `_update`, `_uninstall`, `_version`, `_configure`. See
-[06](06-tools-and-agents.md).
+herdr= guide= login= paths= config= os= managed= env= state=` plus
+`<name>_install` (required), `_update`, `_uninstall`, `_version`, `_configure`,
+and `<name>_jail <dir>` (optional custom sandbox setup). See [06](06-tools-and-agents.md).
 
 **Tunnels** (`tunnels.d/<id>.sh`): `tunnel_define <id> title= reach= rank=
 auto= setup=` plus `<id>_ready`, `<id>_start <port> [name]` (print the URL),
@@ -119,15 +148,12 @@ optional `<id>_stop`. Helpers: `tunnel_bg <id> <port> <url-regex> <cmd…>`,
   `mise activate`, everything else gets shims). PHP-FPM and Docker stay on the OS.
 - **fish is the login shell, bash stays first-class.** Agents run `bash -c`, so
   `~/.profile` and the top of `~/.bashrc` load the same PATH, shims and secrets.
-- **Docker binds to 127.0.0.1.** Docker bypasses ufw, so a casual `-p 5432:5432`
-  would otherwise be public. nginx is the only public entry point, and `doctor` flags the rest.
+- **Docker uses loopback defaults for the default bridge and newly created user-defined bridges.** Existing networks, explicit public bindings, and Swarm service exposure are not changed. Bind Compose ports explicitly (`127.0.0.1:3000:3000`), and use Engine 28+ to avoid the documented older-engine L2 exposure.
 - **zram + swapfile on the server.** Multiple agents plus LSPs plus a build
   quickly exhaust modest server RAM. zram absorbs spikes; Hermes' dashboard is capped at 1 GB.
 - **No auto-reboot. Passwordless sudo only by choice.** `FULL_CONTROL=true`
-  hands agents root on purpose (a playground box); the outside protection
-  (SSH keys, firewall, fail2ban, dashboard auth) never depends on it.
-- **Per-file symlinks**, so fisher, agents and installers write next to their
-  configs without dirtying the repo. Vendor installers run with `SHELL=bash` so
-  their PATH lines land in `~/.bashrc`.
+  enables unattended mode for agents and sudo inside the server; perimeter
+  protection (SSH keys, firewall, fail2ban, dashboard auth) never depends on it.
+- **Per-file symlinks**, so fisher, agents and installers can write adjacent files without changing the repo. Vendor installers receive `SHELL=/bin/bash` as a preference, not a guarantee: some also write `fish/conf.d` fragments.
 - **Menus for humans, flags for machines.** A command prompts only when it was
   run bare at a TTY, so agents never hang on one.

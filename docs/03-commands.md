@@ -1,10 +1,11 @@
 # Commands
 
-All of these live in `~/.dotfiles/bin` (on PATH in fish, bash and agents'
-subshells). **Run one bare in a terminal and you get a menu** (gum when it's
-installed, numbered prompts otherwise). With arguments, or without a TTY (cron,
-pipes, agents), they never prompt: a missing argument is an error, not a hang.
-`<cmd> --help` prints the flag forms.
+These user commands live in `~/.dotfiles/bin` (on PATH in fish, bash and agents'
+subshells). Commands with interactive menus show them when run bare at a
+terminal (gum when installed, numbered prompts otherwise); status and utility
+commands such as `doctor`, `motd`, and `notify` use their documented defaults.
+Without a TTY, commands do not wait for interactive input: provide the required
+arguments and confirmation flags. `<cmd> -h` or `<cmd> --help` prints usage.
 
 ## vps — the hub
 
@@ -32,7 +33,7 @@ update-all agents         # every installed agent CLI
 update-all claude codex   # just these
 update-all tools shell    # groups: system tools agents shell php extras dotfiles
 update-all --check        # what's outdated; changes nothing (exits 1 if a check itself fails)
-update-all --quick        # skip apt (no sudo)
+update-all --quick        # skip OS packages (apt/pacman/dnf/brew; no sudo needed)
 update-all -n             # print the plan
 ```
 
@@ -80,7 +81,7 @@ tunnel                       # menu: pick the port (from what's listening), then
 tunnel 5173                  # TUNNEL_DEFAULT, else the first ready PRIVATE provider (tailscale, else ssh)
 tunnel 5173 cloudflare       # public providers ask first; -y to skip (scripts)
 tunnel 3000 cfnamed dev.example.com
-tunnel ls · tunnel stop <port|all> · tunnel logs <port> · tunnel providers
+tunnel ls · tunnel stop <port|all> [provider] · tunnel logs <port> [provider] · tunnel providers
 ```
 
 Details: [07 Networking](07-networking.md).
@@ -95,17 +96,20 @@ sandbox agent codex          # an agent CLI under srt
 sandbox box [image]          # throwaway container with $PWD at /work (gVisor when installed)
 ```
 
+`sandbox box` honours `SANDBOX_IMAGE` (default `mcr.microsoft.com/devcontainers/base:ubuntu`),
+`SANDBOX_CPUS` (default `min(2, host_cpus)`), and `SANDBOX_MEMORY` (default `2g`).
+
 Details: [09 Sandboxing](09-sandboxing.md).
 
 ## agents — the agent CLIs
 
 ```bash
 agents                       # table: version, path, b-* wrapper
-agents install grok          # install + add to AGENTS + herdr hook + shared guide
+agents install <name…>       # install one or more + add to AGENTS + herdr hook + shared guide
 agents update [name…]        # = update-all agents
 agents login [name]          # menu of sign-ins
 agents herdr                 # re-install herdr sidebar hooks
-agents remove <name> [--purge]
+agents remove <name> [--purge]   # (or: agents uninstall <name> [--purge])
 agents new <name>            # scaffold agents.d/<name>.sh
 agents retire <name>         # sunset: uninstall, drop from AGENTS, move to agents.d/retired/
 agents restore <name>
@@ -121,8 +125,9 @@ make test; notify "tests exited $?"
 journalctl -u app -n 20 | notify
 ```
 
-Uses the Hermes bot token and the first `TELEGRAM_ALLOWED_USERS` id (or
-`NOTIFY_TELEGRAM_CHAT`). The token never goes on a command line.
+Uses `TELEGRAM_BOT_TOKEN` and `NOTIFY_TELEGRAM_CHAT` (from `~/.config/secrets.env`,
+`~/.hermes/.env`, or `config.env`), falling back to the first user ID in
+`TELEGRAM_ALLOWED_USERS`. The token is passed via stdin and never appears on a command line.
 
 ## hermes-up — Telegram gateway + dashboard
 
@@ -131,27 +136,44 @@ hermes-up          # install/refresh the gateway as a boot service, restart the 
 hermes-up status
 ```
 
+## motd — system status summary
+
+```bash
+motd               # print the server/system health summary any time
+```
+
+Runs automatically on interactive SSH login when `LOGIN_GREETING=true` (showing
+last login, uptime, pending updates, load, memory/swap, disk, Docker containers,
+running agents, fail2ban, and ufw status).
+
 ## install.sh, setup-server.sh, setup-desktop.sh
 
 ```bash
-./setup-server.sh            # VPS/headless: everything incl. firewall, nginx, Hermes
+./setup-server.sh            # server/headless: everything incl. firewall, nginx, Hermes
 ./setup-desktop.sh           # laptop/desktop/WSL: no nginx/firewall/server tuning
 ./install.sh                 # menu (first run: settings wizard)
-./install.sh --changed       # only stages whose files or config changed (or never ran / failed)
+./install.sh -c              # (--changed) only stages whose files or config changed (or never ran / failed)
 ./install.sh --renew         # everything + upgrade all tools/agents + re-render sites
-./install.sh --all           # re-apply every stage
-./install.sh docker web      # specific stages
-./install.sh --status        # what ran when, what changed, what's skipped and why
-./install.sh --configure     # settings wizard
-./install.sh --list          # stages with OS/profile rules
+./install.sh -a              # (--all) re-apply every stage
+./install.sh docker web      # specific stages (by number, prefix, or short name)
+./install.sh -s              # (--status) what ran when, what changed, what's skipped and why
+./install.sh --configure     # interactive settings wizard (writes config.env)
+./install.sh -l              # (--list) stages with OS/profile rules
+./install.sh -h              # (--help) usage summary
 ```
 
-All take `-y` (except switching profile, which always asks at a terminal).
-Modes don't combine: give stage names *or* one of `--all/--changed/--renew`.
-A stage that finishes with work left (no key login seen yet, a tool that
-failed to install, DNS not ready) is reported "incomplete" and `--changed`
-retries it. Once setup has run, `install.sh` without a TTY refuses to
-re-run everything silently; say which mode you mean.
+All accept `-y` / `--yes` for non-interactive runs (except switching an existing
+machine's profile, which always asks at a terminal). Any `config.env` key can
+also be passed as an environment variable override (e.g.
+`HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`). Installation runs save
+explicit nonempty exported overrides to private `config.env`; read-only
+`--status`/`--list`/`--help` do not. See [10 Reference](10-reference.md#configenv).
+Modes don't combine: pass stage names *or* one of `--all`/`--changed`/`--renew`.
+A stage that finishes
+with pending manual prerequisites (no SSH key login seen yet, a vendor tool that
+failed to download, DNS not pointing at the server yet) is marked "incomplete"
+and `--changed` retries it. Once setup has completed, running `install.sh`
+without a TTY refuses to re-run everything silently; specify which mode you want.
 
 ## Fish helpers
 
@@ -162,6 +184,6 @@ re-run everything silently; say which mode you mean.
 | `clone <url\|owner/repo> [dir]` | Clone into `~/projects` and cd |
 | `ports [port]` | Listening TCP ports |
 | `mkcd`, `path-list`, `fish-reload` | Small conveniences |
-| `b-claude`, `b-codex`, `b-opencode`, `b-omp`, `b-grok`, `b-hermes` | Launch with the tool's official bypass flags after a `[y/N]` (with `FULL_CONTROL`, Claude and Codex skip the question, and plain `claude`/`codex` already start in YOLO mode) |
+| `b-claude`, `b-codex`, `b-opencode`, `b-omp`, `b-grok`, `b-hermes` | Launch with the tool's official bypass flags after a `[y/N]` prompt (when `FULL_CONTROL=true`, `b-claude` and `b-codex` skip the prompt, and plain `claude`/`codex` already start with unattended permission defaults) |
 
 Abbreviations: [04 Shell and prompt](04-shell-and-prompt.md#abbreviations).

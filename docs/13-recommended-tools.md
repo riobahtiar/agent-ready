@@ -1,7 +1,8 @@
-# Recommended tools (not installed by default)
+# Recommended optional tools
 
-Ideas for turning the VPS into a better coding machine, roughly in order of
-payoff. Each says how to add it the modular way.
+Ideas for extending your server or workstation with optional tools, grouped by
+use case. Some built-in opt-ins and already-installed tools are included for
+context and labelled below.
 
 ## Access and editing
 
@@ -9,8 +10,8 @@ payoff. Each says how to add it the modular way.
 |---|---|---|
 | **Tailscale** | private access from laptop and phone, private dev URLs, optional keyless SSH | `TAILSCALE=true`, `./install.sh network` (built in) |
 | **mosh** | a terminal that survives Wi-Fi changes and laptop sleep | `OPEN_MOSH=true`, `./install.sh security` (built in) |
-| **Zed remote** | full editor with the server part on the VPS, lighter than VS Code | on the laptop: `zed ssh://cloud/~/projects/app` |
-| **VS Code / Cursor Remote-SSH** | familiar, with extensions | laptop extension; costs ~400 MB RAM on the VPS per window |
+| **Zed remote** | full editor with the server part on your server, lighter than VS Code | on your laptop: `zed ssh://cloud/~/projects/app` |
+| **VS Code / Cursor Remote-SSH** | familiar, with extensions | laptop extension; uses ~400 MB RAM on the server per window |
 | **Blink Shell / Termius** (iPad, phone) | mosh + herdr from anywhere | app stores |
 | **code-server** | VS Code in a browser tab | only behind Cloudflare Access or Tailscale: `curl -fsSL https://code-server.dev/install.sh \| sh`, then `tunnel 8080 tailscale` |
 
@@ -49,6 +50,6 @@ payoff. Each says how to add it the modular way.
 
 | Tool | Why | Add |
 |---|---|---|
-| **restic** or **rclone** nightly | the VPS disk is a single point of failure | [12 Maintenance](12-maintenance.md#backups) |
-| **earlyoom** | kills the biggest process before the whole box stalls when RAM runs out | `sudo apt install earlyoom` (zram + swap already cover most cases) |
+| **restic** or **rclone** nightly | a single server disk is a single point of failure | [12 Maintenance](12-maintenance.md#backups) |
+| **earlyoom** | kills the largest process before the whole server stalls if RAM runs out | `sudo apt install earlyoom` (zram + swap already cover most cases) |
 | **Cloudflare Access** | an identity check in front of any dashboard you expose | Zero Trust → Access → Applications |

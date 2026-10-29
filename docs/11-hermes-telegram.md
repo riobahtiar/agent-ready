@@ -1,8 +1,11 @@
 # Hermes: dashboard and Telegram (server profile)
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) (Nous Research)
-runs as a Telegram bot and has a web dashboard, served behind TLS at
-`https://$HERMES_DOMAIN` (e.g. `https://hermes.example.com`).
+runs as an optional Telegram bot and web dashboard, served behind TLS at
+`https://$HERMES_DOMAIN` (e.g. `https://hermes.example.com`). Set
+`HERMES=false` in `config.env` to skip Hermes completely, or leave
+`HERMES_DOMAIN` empty to install the CLI without publishing a public web
+dashboard.
 
 ## How it's wired
 
@@ -38,18 +41,25 @@ hermes-up           # Telegram gateway → boot service; restarts the dashboard
 > trusted networks. Add one of these in front:
 
 - **Cloudflare Access** (recommended, free). Proxy the DNS record through
-  Cloudflare (orange cloud, SSL **Full (strict)**), then Zero Trust → Access →
-  Applications → add your `HERMES_DOMAIN` (e.g. `hermes.example.com`) with an email-OTP or GitHub policy.
+  Cloudflare (orange cloud; SSL/TLS mode **Full (strict)** is recommended), then
+  Zero Trust → Access → Applications → add your `HERMES_DOMAIN` (e.g.
+  `hermes.example.com`) with an email-OTP or GitHub policy.
   **Also set `HERMES_CLOUDFLARE_ONLY=true`** and run `./install.sh hermes`:
-  otherwise anyone who learns the VPS IP reaches the dashboard directly
-  (`curl --resolve hermes.example.com:443:<ip> …`) and skips Access. (Behind the
-  proxy, `HERMES_ALLOW_IPS` only ever sees Cloudflare's addresses.)
-- **IP allowlist**: `HERMES_ALLOW_IPS="203.0.113.7 198.51.100.0/24"` in config.env,
+  otherwise anyone who discovers the server IP can reach the dashboard directly
+  (`curl --resolve hermes.example.com:443:203.0.113.10 …`) and bypass Access.
+  When `HERMES_CLOUDFLARE_ONLY=true` is enabled, the nginx vhost restricts
+  connections to Cloudflare IP ranges and also tolerates Cloudflare's Flexible
+  SSL mode without redirect loops (though **Full (strict)** remains recommended).
+  (Behind the proxy, `HERMES_ALLOW_IPS` only sees Cloudflare's addresses.)
+- **IP allowlist**: `HERMES_ALLOW_IPS="203.0.113.7 198.51.100.0/24"` in `config.env`,
   then `./install.sh hermes`.
-- Tailscale-only access sounds tempting, but pointing the public DNS record at a
-  100.x address breaks Let's Encrypt's HTTP check (and renewals). Use one of
-  the two above. With Tailscale you can still use the allowlist: add your
-  devices' public IPs.
+- **Tailscale:** a tailnet alone does not make the public dashboard domain
+  private. Pointing public DNS at a Tailscale `100.x` address breaks Let's
+  Encrypt's HTTP validation and renewal. For this repository's domain-based
+  dashboard, keep public DNS and use Cloudflare Access or allowlist your devices'
+  public egress IPs. Adding a Tailscale IP to the allowlist only helps when
+  traffic actually reaches nginx over that tailnet path; it does not change DNS
+  or certificate validation.
 
 Stage 80 also refuses to publish the vhost unless the dashboard reports
 `auth_required: true`. If Hermes ever starts without auth, the site stays off
@@ -67,7 +77,8 @@ and the stage is reported incomplete.
 
 ## notify: your own messages through the same bot
 
-`notify "text"` sends a message as the bot to the first id in
-`TELEGRAM_ALLOWED_USERS` (or `NOTIFY_TELEGRAM_CHAT`). It doesn't interfere with
-the gateway, which only reads updates. Use it from hooks, cron or after long
-builds ([06](06-tools-and-agents.md#get-pinged)).
+`notify "text"` sends a message as your Telegram bot using `TELEGRAM_BOT_TOKEN`
+and `NOTIFY_TELEGRAM_CHAT` (from `~/.config/secrets.env`, `~/.hermes/.env`, or
+`config.env`, falling back to the first ID in `TELEGRAM_ALLOWED_USERS`). It
+doesn't interfere with the gateway, which only reads incoming updates. Use it
+from hooks, cron, or after long builds ([06](06-tools-and-agents.md#get-pinged)).

@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
-# doctor — one-screen health check for this VPS.
+# doctor — one-screen health check for this machine.
 #   doctor           full report
 #   doctor --brief   services, resources and exposure only (used at the end of install.sh)
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 source "$DOTFILES_DIR/lib/agents.sh"
-load_config
 
 BRIEF=0
-[[ ${1:-} == --brief ]] && BRIEF=1
+for arg in "$@"; do
+    case $arg in
+    -h | --help)
+        printf 'Usage: doctor [--brief]\n\nReport machine health; --brief shows services, resources and exposure only.\n'
+        exit 0
+        ;;
+    --brief) BRIEF=1 ;;
+    *) die "unknown argument: $arg (see doctor --help)" ;;
+    esac
+done
+load_config
 problems=0
 bad() {
     printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*"
@@ -28,7 +37,7 @@ if [[ $OS_KIND == linux ]]; then
 
     mem_avail_mb=$(($(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1024))
     mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
-    if ((mem_avail_mb < 700)); then bad "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; else good "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; fi
+    if ((mem_avail_mb < 256 || (mem_total_mb > 0 && mem_avail_mb * 100 / mem_total_mb < 10))); then bad "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; else good "memory: ${mem_avail_mb} MB available of ${mem_total_mb} MB"; fi
     swap_line="$(swapon --show=NAME,SIZE,USED --noheadings 2>/dev/null | tr -s ' ' | paste -sd ',' -)"
     [[ -n $swap_line ]] && good "swap: $swap_line" || meh "no swap active"
 
@@ -43,9 +52,20 @@ fi
 
 if ((HAS_SYSTEMD)); then
     section "Services"
-    # 26.04 socket-activates sshd: ssh.socket is what must be up.
-    units=(docker cloud-cleanup.timer)
-    [[ $PROFILE == server ]] && units=(ssh.socket nginx docker fail2ban unattended-upgrades cloud-cleanup.timer)
+    units=()
+    if [[ $PROFILE == server ]]; then
+        for ssh_unit in ssh.socket ssh.service sshd.service; do
+            if systemctl cat "$ssh_unit" >/dev/null 2>&1; then
+                units+=("$ssh_unit")
+                break
+            fi
+        done
+        have nginx && units+=(nginx)
+        units+=(fail2ban)
+        [[ $OS_FAMILY == debian ]] && units+=(unattended-upgrades)
+    fi
+    is_true "$DOCKER" && units+=(docker)
+    is_true "$CLEANUP_TIMER" && units+=(cloud-cleanup.timer)
     is_true "$TAILSCALE" && units+=(tailscaled)
     [[ $PROFILE == server ]] && is_true "$HERMES" && units+=(hermes-dashboard hermes-gateway)
     for unit in "${units[@]}"; do
@@ -67,35 +87,39 @@ if ((HAS_SYSTEMD)); then
         [[ $ufw_status == *"Status: active"* ]] && good "ufw active" || bad "ufw inactive"
     fi
 
-    section "Exposure (listening on non-loopback addresses)"
-    while read -r addr proc; do
-        port=${addr##*:}
-        case $port in
-        22 | 80 | 443) good "$addr ${proc:-}" ;;
-        *) bad "$addr ${proc:-} — public? bind it to 127.0.0.1 and use: site add" ;;
-        esac
-    done < <(ss -tlnpH 2>/dev/null | awk '
+    if [[ $PROFILE == server ]]; then
+        section "Exposure (listening on non-loopback addresses)"
+        while read -r addr proc; do
+            port=${addr##*:}
+            case $port in
+            22 | 80 | 443) good "$addr ${proc:-}" ;;
+            *) bad "$addr ${proc:-} — public? bind it to 127.0.0.1 and use: site add" ;;
+            esac
+        done < <(ss -tlnpH 2>/dev/null | awk '
         # loopback, and Tailscale CGNAT 100.64.0.0/10 only (not all of 100/8)
         $4 ~ /^(127\.|\[::1\]|\[::ffff:127)/ { next }
         $4 ~ /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./ { next }
         { p = $6; sub(/.*\(\("/, "", p); sub(/".*/, "", p); print $4, p }' | sort -u)
-    # UDP too: often legit (tailscaled, mosh), worth knowing about.
-    while read -r addr proc; do
-        case $proc in tailscaled | mosh-server | systemd-resolve | chronyd | systemd-timesyn) good "udp $addr $proc" ;; *) meh "udp $addr ${proc:-?} listening publicly" ;; esac
-    done < <(ss -ulnpH 2>/dev/null | awk '
+        # UDP too: often legit (tailscaled, mosh), worth knowing about.
+        while read -r addr proc; do
+            case $proc in tailscaled | mosh-server | systemd-resolve | chronyd | systemd-timesyn) good "udp $addr $proc" ;; *) meh "udp $addr ${proc:-?} listening publicly" ;; esac
+        done < <(ss -ulnpH 2>/dev/null | awk '
         $4 ~ /^(127\.|\[::1\]|\[::ffff:127|\[fe80|fe80)/ { next }
         $4 ~ /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./ { next }
         { p = $0; sub(/.*\(\("/, "", p); sub(/".*/, "", p); if (p == $0) p = ""; print $4, p }' | sort -u)
+    fi
 fi
 
 if ((! BRIEF)); then
-    section "Certificates"
-    if certs="$(nsudo certbot certificates 2>/dev/null)" && [[ -n $certs ]]; then
-        awk '/Certificate Name:/ {n=$3} /Expiry Date:/ {sub(/.*Expiry Date: /, ""); print n " — " $0}' <<<"$certs" | while read -r line; do
-            [[ $line == *INVALID* || $line == *EXPIRED* ]] && bad "$line" || good "$line"
-        done
-    else
-        meh "run 'sudo doctor' (or sudo -v first) to read certificates"
+    if [[ $PROFILE == server ]]; then
+        section "Certificates"
+        if certs="$(nsudo certbot certificates 2>/dev/null)" && [[ -n $certs ]]; then
+            awk '/Certificate Name:/ {n=$3} /Expiry Date:/ {sub(/.*Expiry Date: /, ""); print n " — " $0}' <<<"$certs" | while read -r line; do
+                [[ $line == *INVALID* || $line == *EXPIRED* ]] && bad "$line" || good "$line"
+            done
+        else
+            meh "run 'sudo doctor' (or sudo -v first) to read certificates"
+        fi
     fi
 
     if [[ -n $(env_get "$HOME/.hermes/.env" HERMES_DASHBOARD_BASIC_AUTH_USERNAME 2>/dev/null) ]] || systemctl is-enabled hermes-dashboard >/dev/null 2>&1; then
@@ -114,6 +138,7 @@ if ((! BRIEF)); then
         aws:--version wrangler:--version cf:--version rclone:version srt:--version tailscale:version cloudflared:--version \
         php:--version composer:--version flutter:--version docker:--version nginx:-v fish:--version; do
         bin=${t%%:*} flag=${t#*:}
+        [[ $PROFILE == desktop && $bin == nginx ]] && continue
         if have "$bin"; then
             v="$(with_timeout 10 "$bin" "$flag" 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
             printf '  %-9s %s\n' "$bin" "${v:-?}"
@@ -126,7 +151,7 @@ if ((! BRIEF)); then
     agents_table | sed 's/^/  /'
 
     section "Disk hogs"
-    du -sh "$HOME/.cache" "$HOME/.local/share/mise" "$HOME/.claude" "$HOME/.codex" "$HOME/.hermes" "$HOME/projects" 2>/dev/null | sort -rh | sed 's/^/  /'
+    du -sh "$HOME/.cache" "$HOME/.local/share/mise" "$HOME/.claude" "$HOME/.codex" "$HOME/.hermes" "$PROJECTS_DIR" 2>/dev/null | sort -rh | sed 's/^/  /'
     have docker && docker system df 2>/dev/null | sed 's/^/  /'
     [[ -d $DOTFILES_DIR/.git ]] && [[ -n $(git -C "$DOTFILES_DIR" status --porcelain) ]] &&
         meh "~/.dotfiles has uncommitted changes (an installer may have edited a linked file)"

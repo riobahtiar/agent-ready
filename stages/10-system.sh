@@ -17,7 +17,9 @@ if ! locale -a 2>/dev/null | grep -qi "^${LOCALE/UTF-8/utf8}$"; then
     fi
 fi
 as_root localectl set-locale LANG="$LOCALE" 2>/dev/null || { have update-locale && as_root update-locale LANG="$LOCALE"; } || true
-as_root timedatectl set-timezone "$TIMEZONE"
+if [[ -n ${TIMEZONE:-} ]]; then
+    as_root timedatectl set-timezone "$TIMEZONE"
+fi
 if [[ -n ${HOSTNAME_FQDN:-} && $(hostname -f 2>/dev/null) != "$HOSTNAME_FQDN" ]]; then
     as_root hostnamectl set-hostname "$HOSTNAME_FQDN"
 fi
@@ -43,11 +45,18 @@ if is_true "$ZRAM"; then
 fi
 if ((SWAP_SIZE_GB > 0)) && ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
     if [[ ! -f /swapfile ]]; then
-        as_root fallocate -l "${SWAP_SIZE_GB}G" /swapfile
-        as_root chmod 600 /swapfile
-        as_root mkswap /swapfile >/dev/null
+        free_gb=$(df -Pk / | awk 'NR==2 {print int($4/1048576)}')
+        if ((free_gb < SWAP_SIZE_GB * 2 + 2)); then
+            warn "not enough free space on / for ${SWAP_SIZE_GB} GiB swap — skipping swapfile creation"
+        else
+            as_root fallocate -l "${SWAP_SIZE_GB}G" /swapfile
+            as_root chmod 600 /swapfile
+            as_root mkswap /swapfile >/dev/null
+        fi
     fi
-    if as_root swapon --priority 10 /swapfile 2>/dev/null; then
+    if [[ ! -f /swapfile ]]; then
+        : # Creation was skipped because disk space is low.
+    elif as_root swapon --priority 10 /swapfile 2>/dev/null; then
         grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw,pri=10 0 0' | as_root tee -a /etc/fstab >/dev/null
     else
         # e.g. btrfs/overlay root, or a container — not worth failing the install over.

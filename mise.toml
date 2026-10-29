@@ -4,9 +4,9 @@ shellcheck = "latest"
 shfmt = "latest"
 
 [tasks.check]
-description = "bash -n, shellcheck, fish -n, stage headers, templates, secrets"
+description = "bash -n, shellcheck, fish -n, stage headers, module contracts, templates, secrets"
 run = "./scripts/check.sh"
 
 [tasks.fmt]
 description = "shfmt all shell scripts (4-space indent, case labels not indented — the repo style)"
-run = "shfmt -w -i 4 install.sh bootstrap.sh lib stages scripts shell bin agents.d tunnels.d"
+run = "shfmt -w -i 4 install.sh bootstrap.sh setup-server.sh setup-desktop.sh lib stages scripts shell bin agents.d tunnels.d"

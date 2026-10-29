@@ -26,6 +26,31 @@ config_set() {
     atomic_replace "$file" "$tmp"
 }
 
+# Write private settings with the file owner's privileges, never root's through
+# a user-controlled path. Secret values cross the privilege boundary on stdin.
+config_set_owned() {
+    local file=$1 key=$2 value=$3 owner owner_home
+    safe_target "$file"
+    owner="$(os_owner "$file")"
+    owner=${owner%%:*}
+    if is_root && [[ $owner != root ]]; then
+        owner_home="$(getent passwd "$owner" | cut -d: -f6)"
+        printf '%s\0%s\0%s\0' "$file" "$key" "$value" |
+            runuser -u "$owner" -- env -i HOME="$owner_home" USER="$owner" LOGNAME="$owner" PATH=/usr/local/bin:/usr/bin:/bin "$BASH" -c '
+                set -Eeuo pipefail
+                DOTFILES_DIR=$1
+                source "$DOTFILES_DIR/lib/common.sh"
+                source "$DOTFILES_DIR/lib/configure.sh"
+                IFS= read -r -d "" file
+                IFS= read -r -d "" key
+                IFS= read -r -d "" value
+                config_set "$file" "$key" "$value"
+            ' bash "$DOTFILES_DIR"
+    else
+        config_set "$file" "$key" "$value"
+    fi
+}
+
 # config_value <KEY> — current value from config.env (sourced in a subshell).
 config_value() {
     (
@@ -77,16 +102,20 @@ configure_wizard() {
     fi
     config_set "$CONFIG_FILE" PROFILE "$v"
     local profile=$v
-    v="$(_ask GIT_NAME "Git author name" "" "Your Name")" || return 1
+    v="$(_ask GIT_NAME "Git author name" "$(git config --global user.name 2>/dev/null || true)" "Your Name")" || return 1
     config_set "$CONFIG_FILE" GIT_NAME "$v"
-    v="$(_ask GIT_EMAIL "Git author email" "" "you@example.com")" || return 1
+    v="$(_ask GIT_EMAIL "Git author email" "$(git config --global user.email 2>/dev/null || true)" "you@example.com")" || return 1
     config_set "$CONFIG_FILE" GIT_EMAIL "$v"
-    v="$(_ask ACME_EMAIL "Let's Encrypt email (certificate expiry notices)" "$v")" || return 1
-    config_set "$CONFIG_FILE" ACME_EMAIL "$v"
-    v="$(_ask TIMEZONE "Timezone" "UTC")" || return 1
-    config_set "$CONFIG_FILE" TIMEZONE "$v"
-    v="$(_ask HOSTNAME_FQDN "Hostname (empty = keep the provider's)" "" "server.example.com")" || return 1
-    config_set "$CONFIG_FILE" HOSTNAME_FQDN "$v"
+    if [[ $profile == server ]]; then
+        v="$(_ask ACME_EMAIL "Let's Encrypt email (certificate expiry notices)" "$v")" || return 1
+        config_set "$CONFIG_FILE" ACME_EMAIL "$v"
+        local timezone_now
+        timezone_now="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+        v="$(_ask TIMEZONE "Timezone" "${timezone_now:-UTC}")" || return 1
+        config_set "$CONFIG_FILE" TIMEZONE "$v"
+        v="$(_ask HOSTNAME_FQDN "Hostname (empty = keep the provider's)" "" "server.example.com")" || return 1
+        config_set "$CONFIG_FILE" HOSTNAME_FQDN "$v"
+    fi
     v="$(_ask_secret GITHUB_TOKEN "GitHub token (optional · lifts the 60/h API limit for installs)")" || return 1
     config_set "$CONFIG_FILE" GITHUB_TOKEN "$v"
 
@@ -102,19 +131,41 @@ configure_wizard() {
         "${agent_items[@]}")" || return 1
     config_set "$CONFIG_FILE" AGENTS "$(tr '\n' ' ' <<<"$picked" | sed 's/ *$//')"
 
+    if [[ $profile == desktop ]]; then
+        source "$DOTFILES_DIR/lib/desktop-apps.sh"
+        local desktop_current desktop_choice app_id
+        local -a desktop_items=()
+        desktop_current="$(config_value DESKTOP_APPS)"
+        desktop_choice="$(ui_choose "Optional desktop apps (unselecting does not uninstall)" \
+            "keep|Keep selection: ${desktop_current:-none}" \
+            "select|Choose apps to install" \
+            "none|Install no optional desktop apps")" || return 1
+        case $desktop_choice in
+        select)
+            while IFS= read -r app_id; do
+                desktop_items+=("$app_id|$(desktop_app_label "$app_id")")
+            done < <(desktop_app_ids)
+            picked="$(ui_multi "Desktop apps (space to select; no selection = none)" "$desktop_current" \
+                "${desktop_items[@]}")" || return 1
+            config_set "$CONFIG_FILE" DESKTOP_APPS "$(tr '\n' ' ' <<<"$picked" | sed 's/ *$//')"
+            ;;
+        none) config_set "$CONFIG_FILE" DESKTOP_APPS "" ;;
+        esac
+    fi
+
     local -a features=(
-        "FULL_CONTROL|Full control inside: passwordless sudo · Claude + Codex in YOLO mode (outside stays locked)"
+        "FULL_CONTROL|Unattended mode: passwordless sudo + skip agent permission prompts (perimeter stays locked)"
         "TAILSCALE|Tailscale: private network to your laptop/phone + private dev URLs"
         "TAILSCALE_SSH|Tailscale SSH (log in over the tailnet without keys)"
         "DOCKER|Docker Engine (Linux; off if you use Podman or Docker Desktop)"
         "AGENT_SANDBOX|Claude Code sandbox on by default (bubblewrap/Seatbelt)"
-        "GVISOR|gVisor runtime for 'sandbox box' containers (Debian/Ubuntu)"
         "CLEANUP_TIMER|Weekly safe cleanup (Sunday 04:00)"
-        "FLUTTER_LINUX_DESKTOP|Flutter Linux desktop build deps (GTK · clang)"
     )
+    [[ $OS_FAMILY == debian ]] && features+=("GVISOR|gVisor runtime for 'sandbox box' containers (Debian/Ubuntu)")
+    [[ $OS_KIND == linux ]] && features+=("FLUTTER_LINUX_DESKTOP|Flutter Linux desktop build deps (GTK · clang)")
     [[ $profile == server ]] && features=(
         "HERMES|Hermes agent + web dashboard + Telegram bot"
-        "PHP|PHP-FPM 8.5 + composer"
+        "PHP|PHP-FPM + Composer (distro default)"
         "ZRAM|Compressed RAM swap (recommended for servers)"
         "SSH_DISABLE_ROOT|Block root SSH logins"
         "OPEN_MOSH|Open UDP 60000-61000 for mosh"
@@ -125,10 +176,10 @@ configure_wizard() {
         v=${item%%|*}
         is_true "$(config_value "$v")" && toggles+="$v "
     done
-    [[ -z $(config_value AGENT_SANDBOX) ]] && toggles+="AGENT_SANDBOX "
     [[ -z $(config_value DOCKER) ]] && toggles+="DOCKER "
     [[ -z $(config_value CLEANUP_TIMER) && $profile == server ]] && toggles+="CLEANUP_TIMER "
     [[ -z $(config_value FULL_CONTROL) && $profile == server ]] && toggles+="FULL_CONTROL "
+    [[ -z $(config_value AGENT_SANDBOX) ]] && ! grep -qw FULL_CONTROL <<<"$toggles" && toggles+="AGENT_SANDBOX "
     picked="$(ui_multi "Features" "$toggles" "${features[@]}")" || return 1
     for item in "${features[@]}"; do
         v=${item%%|*}
@@ -140,16 +191,18 @@ configure_wizard() {
         config_set "$CONFIG_FILE" TAILSCALE_AUTHKEY "$v"
     fi
     v="$(ui_choose "Default for 'tunnel <port>' (sharing a dev server)" \
-        "auto|auto — first ready: Tailscale → Cloudflare quick → …" \
+        "auto|auto — first ready private tunnel (Tailscale Serve → SSH port-forward)" \
         "tailscale|tailscale — private to your tailnet" \
+        "ssh|ssh — private port-forward to your client" \
         "cloudflare|cloudflare — public random trycloudflare.com URL" \
+        "funnel|funnel — public on your Tailscale ts.net name" \
         "zrok|zrok — public · open source" \
         "pinggy|pinggy — public over SSH · no install")" || return 1
     config_set "$CONFIG_FILE" TUNNEL_DEFAULT "$v"
 
     if [[ $profile == server ]] && grep -qx HERMES <<<"$picked"; then
         ui_title "Hermes"
-        v="$(_ask HERMES_DOMAIN "Dashboard domain (A record → this server)" "" "hermes.example.com")" || return 1
+        v="$(_ask HERMES_DOMAIN "Dashboard domain (empty = skip public TLS dashboard)" "" "hermes.example.com")" || return 1
         config_set "$CONFIG_FILE" HERMES_DOMAIN "$v"
         v="$(_ask HERMES_DASHBOARD_USER "Dashboard login name" "$(config_value TARGET_USER)")" || return 1
         config_set "$CONFIG_FILE" HERMES_DASHBOARD_USER "$v"
@@ -163,11 +216,16 @@ configure_wizard() {
     fi
     # Written as root (install.sh run directly by root): hand it back to the repo owner.
     if is_root; then chown -h "$(os_owner "$DOTFILES_DIR")" "$CONFIG_FILE"; fi
-    ok "saved ${CONFIG_FILE/#$HOME/\~} — re-run the stages that use what you changed"
+    ok "saved ${CONFIG_FILE/#$HOME/\~} — apply changes with ./install.sh --changed"
 }
 
 # config_looks_unset — true while config.env is missing or still has placeholders.
 config_looks_unset() {
     local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
-    [[ ! -f $file ]] || grep -qE '^(GIT_EMAIL|ACME_EMAIL)="?you@example\.com' "$file"
+    [[ ! -f $file ]] && return 0
+    local CONFIG_FILE=$file profile
+    profile="${PROFILE_OVERRIDE:-${PROFILE:-$(config_value PROFILE)}}"
+    grep -qE '^GIT_EMAIL=["'\'']?you@example\.com' "$file" && return 0
+    [[ -z $(config_value GIT_EMAIL) ]] && return 0
+    [[ $profile == server ]] && { [[ -z $(config_value ACME_EMAIL) ]] || grep -qE '^ACME_EMAIL=["'\'']?you@example\.com' "$file"; }
 }

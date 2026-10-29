@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `doctor` and `./install.sh --status`: most problems show up in one of them.
+Start with `doctor` and `./install.sh --status`: most problems show up in one of them. For general questions, see [16 FAQ](16-faq.md).
 
 | Symptom | Fix |
 |---|---|
@@ -14,11 +14,11 @@ Start with `doctor` and `./install.sh --status`: most problems show up in one of
 | `setup already ran here` | It's the guard: pick `--changed`, `--all` or `--renew` (or run it in a terminal for the menu) |
 | mise: `API rate limit exceeded` | Set `GITHUB_TOKEN` in config.env, then `./install.sh tools` |
 | mise: one tool fails and others are missing | A bad tool name fails the whole install. `mise ls --missing`, then fix the name in `conf.d/` (`mise registry \| grep <name>`) |
-| `flutter: No URL for platform linux-arm64` | Flutter only publishes linux-x64 SDKs. On an arm64 VPS, remove it from `10-runtimes.toml` or build in CI |
+| `flutter: No URL for platform …` | Linux ARM64 is automatically skipped via `MISE_DISABLE_TOOLS=flutter` (upstream publishes Linux x86-64 only), and Intel macOS has `macos-x64` configured in `10-runtimes.toml`. If you hit this on an older checkout, pull the latest repo and run `./install.sh dotfiles tools` |
 | Agent can't find `node`/`go` in a subshell | `mise doctor`; check `bash -lc 'echo $PATH'` includes `~/.local/share/mise/shims` |
 | Prompt isn't easy-eel | `fisher update` (or `./install.sh tools`), then `exec fish`. Check `functions -D fish_prompt` |
 | Right prompt shows `node` without a version | That shell uses shims, not `mise activate` (non-interactive). Interactive fish shows the version |
-| `ERR_TOO_MANY_REDIRECTS` / "Cloudflare SSL/TLS mode is Flexible" behind Cloudflare | Cloudflare → SSL/TLS → Overview → **Full (strict)**. Flexible fetches the origin over HTTP, and the origin's redirect to HTTPS then loops |
+| `ERR_TOO_MANY_REDIRECTS` / "Cloudflare SSL/TLS mode is Flexible" behind Cloudflare | Set Cloudflare → SSL/TLS → Overview → **Full (strict)**. In Flexible mode, Cloudflare connects to the origin over HTTP, causing standard HTTP→HTTPS redirects (`site add`) to loop. (For the Hermes vhost, `HERMES_CLOUDFLARE_ONLY=true` also tolerates Flexible mode, though **Full (strict)** is still recommended.) |
 | certbot fails | DNS must point here (`dig +short <domain>`), port 80 open. Behind Cloudflare: SSL **Full (strict)** |
 | Dashboard `400 Invalid Host header` | `hermes update`; confirm `hermes config get dashboard.public_url` matches `https://$HERMES_DOMAIN` ([issue #34390](https://github.com/NousResearch/hermes-agent/issues/34390)) |
 | Dashboard won't start | `journalctl -u hermes-dashboard -n 50`; usually auth: `HERMES_RESET_PASSWORD=1 ./install.sh hermes` |

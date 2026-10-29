@@ -2,14 +2,15 @@
 # install.sh — set up this machine from the stages in ./stages.
 #
 #   ./install.sh                 at a terminal: settings wizard (first run), then a menu
-#   ./install.sh --all           every stage that applies to this OS/profile, in order
+#   ./install.sh -a, --all       every stage that applies to this OS/profile, in order
 #   ./install.sh --changed       only stages that never ran, failed, or whose files/config changed
 #   ./install.sh --renew         everything again + upgrade all tools/agents + re-render sites
 #   ./install.sh docker web      just these stages (name or number)
-#   ./install.sh --status        what ran when, what changed, what's skipped here and why
-#   ./install.sh --configure     edit config.env through prompts
-#   ./install.sh --list          stages with their OS/profile rules
-#   -y                           yes to every question (non-interactive)
+#   ./install.sh -s, --status    what ran when, what changed, what's skipped here and why
+#   ./install.sh -c, --configure edit config.env through prompts
+#   ./install.sh -l, --list      stages with their OS/profile rules
+#   -y, --yes                   yes to every question (non-interactive)
+#   ./setup-server.sh / ./setup-desktop.sh select the corresponding profile
 #
 # Stages are idempotent: re-running one is always safe. Once setup has run,
 # install.sh won't silently re-run everything without a TTY: pass --all,
@@ -50,7 +51,7 @@ source "$DOTFILES_DIR/lib/configure.sh"
 source "$DOTFILES_DIR/lib/stages.sh"
 
 usage() {
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -99,7 +100,7 @@ orig_args=("${orig_args[@]}")
 asking() { [[ -z $MODE && ${ASSUME_YES:-0} != 1 ]] && ui_interactive; }
 
 if ((CONFIGURE)) || { asking && config_looks_unset; }; then
-    if ((CONFIGURE)) || ui_confirm "config.env still has placeholders — fill it in now?" yes; then
+    if ((CONFIGURE)) || ui_confirm "Set up machine configuration (identity, features, optional domains) now?" yes; then
         configure_wizard || die "settings wizard cancelled"
     fi
     if ((CONFIGURE)) && [[ -z $MODE ]]; then
@@ -108,6 +109,12 @@ if ((CONFIGURE)) || { asking && config_looks_unset; }; then
 fi
 [[ -f ${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env} ]] ||
     die "Missing config.env — run: ./install.sh --configure (or cp config.env.example config.env)"
+# Persist explicit environment overrides so --changed hashes the settings actually
+# used. This also carries secrets without exposing them on sudo/env command lines.
+CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+for var in "${!CONFIG_ENV_OVERRIDES[@]}"; do
+    config_set_owned "$CONFIG_FILE" "$var" "${CONFIG_ENV_OVERRIDES[$var]}"
+done
 load_config
 
 # The profile is always written down once decided: auto-detection can change
@@ -205,15 +212,16 @@ fi
 
 if [[ $OS_KIND == linux ]] && ! is_root; then
     log "Re-running with sudo…"
-    # sudo resets the environment; carry over the knobs the docs mention.
+    # Explicit config overrides were saved before sudo. Do not pass derived
+    # defaults as if they were explicit overrides and freeze auto settings.
     passthrough=()
     # (SSH_CONNECTION: stage 20 never lets fail2ban ban the address you're installing from.)
     # DOTFILES_CONFIG only from inside the repo: root sources that file.
     if [[ -n ${DOTFILES_CONFIG:-} && $(readlink -f "$DOTFILES_CONFIG") != "$DOTFILES_DIR"/* ]]; then
         die "DOTFILES_CONFIG must point inside $DOTFILES_DIR (root sources it)"
     fi
-    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE SSH_CONNECTION; do
-        [[ -n ${!var:-} ]] && passthrough+=("$var=${!var}")
+    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE SSH_CONNECTION CLOUD_UI; do
+        [[ -v $var ]] && passthrough+=("$var=${!var}")
     done
     exec sudo -- env "${passthrough[@]}" "$SELF" "${orig_args[@]}"
 fi
@@ -318,13 +326,26 @@ fi
 if [[ $MODE == all && ! -f $DOTFILES_DIR/.state/next-steps-shown ]]; then
     mkdir -p "$DOTFILES_DIR/.state"
     touch "$DOTFILES_DIR/.state/next-steps-shown"
-    cat >&2 <<EOF
+    if [[ $PROFILE == server ]]; then
+        cat >&2 <<EOF
 
 Next steps (docs/01-first-setup.md, step 5 onwards):
-  1. Log out and back in (docker group + login shell take effect)
-  2. Run:                 vps        (menu for everything below)
+  1. Log out and back in (group membership + login shell take effect)
+  2. Run:                 vps
   3. Sign in to agents:   agents login
-  4. Hermes:              hermes setup  then  hermes-up
-  5. Health check:        doctor
+  4. Health check:        doctor
 EOF
+        if is_true "$HERMES"; then
+            printf '  5. Hermes:              hermes setup  then  hermes-up\n' >&2
+        fi
+    else
+        cat >&2 <<EOF
+
+Next steps (docs/08-multi-os.md):
+  1. Open a new terminal (shell and PATH changes take effect)
+  2. Sign in to agents:   agents login
+  3. Health check:        doctor
+  4. Changed settings?    ./setup-desktop.sh --changed
+EOF
+    fi
 fi

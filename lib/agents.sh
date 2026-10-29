@@ -60,7 +60,7 @@ unset __f
 
 # _vendor_script <url> [sh|bash] — download to a temp file, then run it.
 # (Downloading first means a dropped connection can't run half a script.)
-# SHELL=bash so installers append PATH lines to ~/.bashrc, not the symlinked fish config.
+# Prefer Bash startup files where the installer honors SHELL; some vendors also write fish/conf.d.
 # _vendor_script <url> [sh|bash] [installer args…]
 _vendor_script() {
     local url=$1 shell=${2:-bash} tmp
