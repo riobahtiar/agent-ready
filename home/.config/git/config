@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/git/config).
+# Managed by ~/.dotfiles (AgentReady; home/.config/git/config).
 # Identity lives in ~/.config/git/local (written from config.env, not committed).
 [include]
     path = ~/.config/git/local

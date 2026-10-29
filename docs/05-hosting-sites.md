@@ -1,14 +1,14 @@
-# Hosting sites (server profile)
+# Host apps with nginx and TLS on an AgentReady server
 
 nginx is the only public entry point (ports 80/443). Apps listen on
 `127.0.0.1:<port>`, and `site` writes a vhost and gets a Let's Encrypt
-certificate. Docker publishes ports on 127.0.0.1 by default (daemon.json), so a
-container is never accidentally public.
+certificate. Docker is configured with loopback defaults for the default bridge
+and new user-defined bridges; existing networks and explicit public bindings are not changed.
 
 ## Before you add a site
 
-1. DNS: an A record for the domain → the VPS IP (`dig +short app.example.com`).
-   Behind Cloudflare's proxy (orange cloud) use SSL mode **Full (strict)**.
+1. DNS: an A record for your domain pointing to the server IP (`dig +short app.example.com`).
+   Behind Cloudflare's proxy (orange cloud), set SSL/TLS mode to **Full (strict)**.
 2. The app is running on a free port in 3000–3999 (`ss -tln`, or `site add`
    lists what's listening).
 
@@ -32,13 +32,13 @@ a typo never takes nginx down.
 
 ## Keep the app running
 
-**Docker Compose**: `"3002:3000"` already binds to 127.0.0.1.
+**Docker Compose**: always specify the loopback host explicitly so the example is safe even on a pre-existing network.
 
 ```yaml
 services:
   api:
     build: .
-    ports: ["3002:3000"]
+    ports: ["127.0.0.1:3002:3000"]
     restart: unless-stopped
     mem_limit: 512m
 ```

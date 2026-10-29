@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# vps — one menu for running this box. Every entry calls a regular command,
+# vps — the AgentReady management menu for this machine. Every entry calls a regular command,
 # printed before it runs, so you learn the direct form as you go.
 #
 #   vps            menu
 #   vps docs       browse the guides in ~/.dotfiles/docs
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/configure.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/configure.sh"
+
+case ${1:-} in
+-h | --help)
+    printf 'AgentReady management menu\n\nUsage: vps [docs]\n\nOpen the management menu, or browse the guides with docs.\n'
+    exit 0
+    ;;
+esac
 load_config
 
 ui_interactive || die "vps is a menu for humans — scripts and agents: use doctor, site, cleanup, update-all directly"
@@ -32,14 +39,14 @@ menu_agents() {
         "retire|Retire (sunset) an agent" \
         "back|Back")" || return 0
     case $choice in
-    table) run "$DOTFILES_DIR/bin/agents" ;;
-    login) run "$DOTFILES_DIR/bin/agents" login ;;
-    update) run "$DOTFILES_DIR/bin/update-all" agents ;;
-    herdr) run "$DOTFILES_DIR/bin/agents" herdr ;;
-    install) run "$DOTFILES_DIR/bin/agents" install ;;
-    remove) run "$DOTFILES_DIR/bin/agents" remove ;;
-    new) run "$DOTFILES_DIR/bin/agents" new ;;
-    retire) run "$DOTFILES_DIR/bin/agents" retire ;;
+    table) run "$AGENT_READY_DIR/bin/agents" ;;
+    login) run "$AGENT_READY_DIR/bin/agents" login ;;
+    update) run "$AGENT_READY_DIR/bin/update-all" agents ;;
+    herdr) run "$AGENT_READY_DIR/bin/agents" herdr ;;
+    install) run "$AGENT_READY_DIR/bin/agents" install ;;
+    remove) run "$AGENT_READY_DIR/bin/agents" remove ;;
+    new) run "$AGENT_READY_DIR/bin/agents" new ;;
+    retire) run "$AGENT_READY_DIR/bin/agents" retire ;;
     esac
 }
 
@@ -61,9 +68,9 @@ menu_hermes() {
         "update|Update Hermes" \
         "back|Back")" || return 0
     case $choice in
-    status) run "$DOTFILES_DIR/bin/hermes-up" status ;;
+    status) run "$AGENT_READY_DIR/bin/hermes-up" status ;;
     setup) run hermes setup ;;
-    up) run "$DOTFILES_DIR/bin/hermes-up" ;;
+    up) run "$AGENT_READY_DIR/bin/hermes-up" ;;
     pair)
         code="$(ui_input "Pairing code from the Telegram chat")" || return 0
         [[ -n $code ]] && run hermes pairing approve telegram "$code"
@@ -71,21 +78,22 @@ menu_hermes() {
     restart) run sudo systemctl restart hermes-gateway hermes-dashboard ;;
     logs) run journalctl -u hermes-gateway -f -n 100 ;;
     dlogs) run journalctl -u hermes-dashboard -f -n 100 ;;
-    password) run env HERMES_RESET_PASSWORD=1 "$DOTFILES_DIR/install.sh" hermes ;;
-    update) run "$DOTFILES_DIR/bin/update-all" hermes ;;
+    password) run env HERMES_RESET_PASSWORD=1 "$AGENT_READY_DIR/install.sh" hermes ;;
+    update) run "$AGENT_READY_DIR/bin/update-all" hermes ;;
     esac
 }
 
 menu_logs() {
     local choice
-    choice="$(ui_choose "Follow which log? (Ctrl-C to stop)" \
-        "errors|Everything at warning level or worse (this boot)" \
-        "nginx|nginx error log" \
-        "docker|Docker daemon" \
-        "ssh|SSH logins" \
-        "fail2ban|fail2ban bans" \
-        "cleanup|Last weekly cleanup run" \
-        "back|Back")" || return 0
+    local -a items=(
+        "errors|Everything at warning level or worse (this boot)"
+        "docker|Docker daemon"
+        "cleanup|Last weekly cleanup run"
+    )
+    if [[ $PROFILE != desktop ]]; then
+        items+=("nginx|nginx error log" "ssh|SSH logins" "fail2ban|fail2ban bans")
+    fi
+    choice="$(ui_choose "Follow which log? (Ctrl-C to stop)" "${items[@]}" "back|Back")" || return 0
     case $choice in
     errors) run journalctl -b -p warning -f -n 50 ;;
     nginx) run sudo tail -n 50 -F /var/log/nginx/error.log ;;
@@ -140,33 +148,33 @@ menu_settings() {
         "prompt|Edit the fish prompt (easy-eel settings)" \
         "back|Back")" || return 0
     case $choice in
-    wizard) configure_wizard && step "apply with: ./install.sh <stage>  (vps → Settings → Re-apply)" ;;
+    wizard) configure_wizard && step "apply with: ./install.sh --changed" ;;
     secrets)
         file="$HOME/.config/secrets.env"
-        [[ -f $file ]] || install -m 600 "$DOTFILES_DIR/secrets.env.example" "$file"
+        [[ -f $file ]] || install -m 600 "$AGENT_READY_DIR/secrets.env.example" "$file"
         run "${EDITOR:-nano}" "$file"
         step "new shells pick it up; in this one: exec fish"
         ;;
-    stage) run "$DOTFILES_DIR/install.sh" ;;
-    status) run "$DOTFILES_DIR/install.sh" --status ;;
+    stage) run "$AGENT_READY_DIR/install.sh" ;;
+    status) run "$AGENT_READY_DIR/install.sh" --status ;;
     mise)
         local -a groups=()
-        for file in "$DOTFILES_DIR"/home/.config/mise/conf.d/*.toml; do groups+=("$file|$(basename "$file")"); done
+        for file in "$AGENT_READY_DIR"/home/.config/mise/conf.d/*.toml; do groups+=("$file|$(basename "$file")"); done
         file="$(ui_choose "Which group?" "${groups[@]}")" || return 0
         run "${EDITOR:-nano}" "$file" && run mise install
         ;;
-    prompt) run "${EDITOR:-nano}" "$DOTFILES_DIR/home/.config/fish/cloud/prompt.fish" ;;
+    prompt) run "${EDITOR:-nano}" "$AGENT_READY_DIR/home/.config/fish/cloud/prompt.fish" ;;
     esac
 }
 
 menu_docs() {
     local -a items=()
     local f title choice
-    for f in "$DOTFILES_DIR"/docs/*.md; do
+    for f in "$AGENT_READY_DIR"/docs/*.md; do
         title="$(sed -n '1s/^# //p' "$f")"
         items+=("$f|${title:-$(basename "$f")}")
     done
-    items+=("$DOTFILES_DIR/README.md|README (full reference)")
+    items+=("$AGENT_READY_DIR/README.md|README (full reference)")
     choice="$(ui_choose "Guides" "${items[@]}")" || return 0
     if have glow; then
         glow --pager "$choice"
@@ -183,37 +191,40 @@ menu_docs() {
 trap 'echo >&2' INT
 while :; do
     up="$(uptime -p 2>/dev/null | sed 's/^up //' || true)"
-    choice="$(ui_choose "$(hostname -s)${up:+ · $up} · $(df -h / | awk 'NR==2 {print $4}') free" \
-        "doctor|Health check (doctor)" \
-        "update|Update agents and tools (update-all)" \
-        "cleanup|Clean up disk · worktrees · processes (cleanup)" \
-        "site|Websites: add · remove · logs (site)" \
-        "agents|Agents: versions · sign in · update" \
-        "hermes|Hermes: Telegram · dashboard" \
-        "tunnel|Share a dev server: tunnels (tunnel)" \
-        "sandbox|Sandboxes for agents and untrusted code (sandbox)" \
-        "cloud|Cloud CLIs: AWS · Cloudflare · rclone · GitHub sign-in" \
-        "logs|Logs" \
-        "settings|Settings · API keys · install / renew" \
-        "docs|Guides (how-to docs)" \
-        "quit|Quit")" || break
+    items=(
+        "doctor|Health check (doctor)"
+        "update|Update agents and tools (update-all)"
+        "cleanup|Clean up disk · worktrees · processes (cleanup)"
+        "agents|Agents: versions · sign in · update"
+        "tunnel|Share a dev server: tunnels (tunnel)"
+        "sandbox|Sandboxes for agents and untrusted code (sandbox)"
+        "cloud|Cloud CLIs: AWS · Cloudflare · rclone · GitHub sign-in"
+        "logs|Logs"
+        "settings|Settings · API keys · install / renew"
+        "docs|Guides (how-to docs)"
+    )
+    if [[ $PROFILE != desktop ]]; then
+        items+=("site|Websites: add · remove · logs (site)" "hermes|Hermes: Telegram · dashboard")
+    fi
+    choice="$(ui_choose "AgentReady · $(hostname -s)${up:+ · $up} · $(df -h / | awk 'NR==2 {print $4}') free" \
+        "${items[@]}" "quit|Quit")" || break
     case $choice in
-    doctor) run "$DOTFILES_DIR/bin/doctor" ;;
-    update) run "$DOTFILES_DIR/bin/update-all" ;;
-    cleanup) run "$DOTFILES_DIR/bin/cleanup" ;;
-    site) run "$DOTFILES_DIR/bin/site" ;;
+    doctor) run "$AGENT_READY_DIR/bin/doctor" ;;
+    update) run "$AGENT_READY_DIR/bin/update-all" ;;
+    cleanup) run "$AGENT_READY_DIR/bin/cleanup" ;;
+    site) run "$AGENT_READY_DIR/bin/site" ;;
     agents) menu_agents ;;
     hermes) menu_hermes ;;
     logs) menu_logs ;;
     tunnel)
         case "$(ui_choose "Tunnels" "new|Start a tunnel" "ls|Running tunnels" "stop|Stop a tunnel" "providers|Providers and what they need")" in
-        new) run "$DOTFILES_DIR/bin/tunnel" ;;
-        ls) run "$DOTFILES_DIR/bin/tunnel" ls ;;
-        stop) run "$DOTFILES_DIR/bin/tunnel" stop ;;
-        providers) run "$DOTFILES_DIR/bin/tunnel" providers ;;
+        new) run "$AGENT_READY_DIR/bin/tunnel" ;;
+        ls) run "$AGENT_READY_DIR/bin/tunnel" ls ;;
+        stop) run "$AGENT_READY_DIR/bin/tunnel" stop ;;
+        providers) run "$AGENT_READY_DIR/bin/tunnel" providers ;;
         esac
         ;;
-    sandbox) run "$DOTFILES_DIR/bin/sandbox" ;;
+    sandbox) run "$AGENT_READY_DIR/bin/sandbox" ;;
     cloud) menu_cloud ;;
     settings) menu_settings ;;
     docs) menu_docs ;;

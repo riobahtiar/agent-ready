@@ -7,7 +7,7 @@
 # A failed test removes the new vhost so nginx never stays broken.
 
 ACME_WEBROOT=/var/www/letsencrypt
-NGINX_TEMPLATES="$DOTFILES_DIR/nginx/templates"
+NGINX_TEMPLATES="$AGENT_READY_DIR/nginx/templates"
 
 nginx_reload() {
     if as_root nginx -t 2>/dev/null; then

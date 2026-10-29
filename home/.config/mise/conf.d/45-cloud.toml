@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/45-cloud.toml) — cloud CLIs.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/45-cloud.toml) — cloud CLIs.
 # Credentials never go here: `aws configure sso` / ~/.aws, `wrangler login`,
 # `rclone config`, or tokens in ~/.config/secrets.env (CLOUDFLARE_API_TOKEN, …).
 [tools]

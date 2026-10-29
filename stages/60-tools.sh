@@ -5,7 +5,7 @@
 # stage-inputs: home/.config/mise home/.config/fish/fish_plugins
 # stage-desc: mise runtimes + CLI tools (node, bun, go, python/uv, flutter, rg, ast-grep…), fisher plugins
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
 load_config
 
 if ! have mise; then

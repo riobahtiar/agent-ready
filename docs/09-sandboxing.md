@@ -1,4 +1,4 @@
-# Sandboxing agents and untrusted code
+# Sandbox AI coding agents and untrusted development commands
 
 Agents run shell commands, often in bypass mode, on a machine that holds your
 SSH keys, cloud tokens and the Hermes `.env`. Sandboxing shrinks what a bad
@@ -9,9 +9,9 @@ reach. The layers below are ordered from lightest to strongest.
 
 | Layer | Isolates | Cost | How |
 |---|---|---|---|
-| **Agent's own sandbox** | each shell command the agent runs | none | Claude Code: on by default here (`AGENT_SANDBOX=true` → `sandbox.enabled`; `/sandbox` in a session). Codex: Landlock + seccomp (Linux) / Seatbelt (macOS); keep `--sandbox workspace-write` |
+| **Agent's own sandbox** | each shell command the agent runs | none | Claude Code: `AGENT_SANDBOX=true` → `sandbox.enabled` (on by default on desktop; off when `FULL_CONTROL=true` unless `AGENT_SANDBOX=true` is set; toggle with `/sandbox` in a session). Codex: Landlock + seccomp (Linux) / Seatbelt (macOS); keep `--sandbox workspace-write` |
 | **srt** (Anthropic sandbox-runtime) | a whole process tree: any agent, `npm install`, a script | none (bubblewrap/Seatbelt) | `sandbox run <cmd>`, `sandbox agent <name>` |
-| **Container** | separate filesystem and processes, shared kernel | a container | `sandbox box` (devcontainer base image, 2 CPU / 2 GB, `no-new-privileges`) |
+| **Container** | separate filesystem and processes, shared kernel | a container | `sandbox box` (devcontainer base image, `min(2, host_cpus)` CPU / 2 GB RAM by default, `no-new-privileges`) |
 | **gVisor container** | the same with a user-space kernel, so syscalls don't hit the host kernel | some CPU overhead | `GVISOR=true` → `sandbox box` uses `--runtime runsc` |
 | **Separate machine** | everything | a VM/VPS | for truly untrusted work |
 
@@ -48,7 +48,7 @@ reach. The layers below are ordered from lightest to strongest.
   (content-addressed, integrity-checked), and never `.env`, `.git/hooks` or
   `.git/config`. Tool installs and caches that run unsandboxed later (mise,
   `~/.bun`, `~/.cache`, the Go module cache) are read-only; sandboxed commands
-  get throwaway caches in a private temp dir instead (`$TMPDIR/sandbox-cache-<uid>`).
+  get throwaway caches in a private temp dir instead (`${XDG_RUNTIME_DIR:-$TMPDIR}/sandbox-cache.*`).
 
 Need another domain (your API, a CDN)? Add it to `allowedDomains` in
 `home/.srt-settings.json`. It's linked, so it applies immediately.
@@ -65,6 +65,7 @@ cd ~/projects/shop && sandbox agent codex --full-auto   # agent in bypass mode, 
 sandbox box                                       # mcr.microsoft.com/devcontainers/base:ubuntu
 sandbox box node:24                               # any image
 SANDBOX_IMAGE=oven/bun:1 sandbox box
+SANDBOX_CPUS=4 SANDBOX_MEMORY=4g sandbox box      # override resource limits (defaults: min(2, host_cpus) and 2g)
 ```
 
 Only the current directory is shared (at `/work`). Nothing is published, and
@@ -78,22 +79,27 @@ automatically, and you can use it anywhere with `docker run --runtime runsc …`
 ## Ubuntu's user-namespace restriction
 
 Ubuntu 24.04+ blocks unprivileged user namespaces unless AppArmor allows them,
-which breaks bubblewrap (and with it Claude Code's sandbox and srt). Stage 65
-tests bwrap and, if needed, loads Ubuntu's own `bwrap-userns-restrict` profile
-(userns for bwrap, but no capabilities for what runs inside). Only where the
-distro has none does it install `system/apparmor-bwrap`. It never flips the
-system-wide `kernel.apparmor_restrict_unprivileged_userns` switch.
+which breaks bubblewrap (and with it Claude Code's sandbox and `srt`). Stage 65
+**always** configures bubblewrap and tests `bwrap`; when needed, it loads Ubuntu's
+`bwrap-userns-restrict` profile (allowing user namespaces for `bwrap` while dropping
+capabilities inside). Only when the distro ships no profile does it install
+`system/apparmor-bwrap`. It never flips the system-wide
+`kernel.apparmor_restrict_unprivileged_userns` sysctl.
 
-With `FULL_CONTROL=true` (playground mode) none of this is on by default:
-agents are meant to run the box. `sandbox run` / `sandbox agent` still work
-when you want them for one untrusted thing.
+When `FULL_CONTROL=true` (the server default for unattended operation), Stage 65
+still sets up bubblewrap/AppArmor so `sandbox run` and `sandbox agent` are ready
+whenever you want them; `FULL_CONTROL=true` only defaults `AGENT_SANDBOX=false`
+for Claude Code's built-in `sandbox.enabled` toggle.
 
 ## Claude Code's own sandbox
 
-On by default unless `FULL_CONTROL=true` (`sandbox.enabled`), plus `permissions.deny` Read rules for
-the same credential files (Claude's sandbox doesn't read `~/.srt-settings.json`).
-Two things to know:
-
+Enabled by default on desktop (`AGENT_SANDBOX=true` → `sandbox.enabled`), and off
+by default when `FULL_CONTROL=true` (override with `AGENT_SANDBOX=true` in
+`config.env`). Stage 70 sets `sandbox.enabled: true` only when the key is absent;
+an explicit `false` you put in `~/.claude/settings.json` is preserved. Either
+way, Stage 70 configures `permissions.deny` Read rules for
+sensitive credential files (since Claude's built-in sandbox doesn't read
+`~/.srt-settings.json`). Two things to know:
 - With `allowUnsandboxedCommands` (Claude's default), Claude may ask to run a
   command outside the sandbox, and in bypass mode (`b-claude`) that's approved
   automatically. Set `"sandbox": {"allowUnsandboxedCommands": false}` in

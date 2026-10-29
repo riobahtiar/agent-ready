@@ -6,10 +6,10 @@
 # means adding one file, and retiring one means `agents retire <name>`.
 # See agents.d/_template.sh and docs/06-tools-and-agents.md.
 
-[[ -n ${__CLOUD_AGENTS_LOADED:-} ]] && return 0
-__CLOUD_AGENTS_LOADED=1
+[[ -n ${__AGENT_READY_AGENTS_LOADED:-} ]] && return 0
+__AGENT_READY_AGENTS_LOADED=1
 
-AGENTS_DIR="$DOTFILES_DIR/agents.d"
+AGENTS_DIR="$AGENT_READY_DIR/agents.d"
 AGENT_NAMES=()
 declare -gA AGENT_META=()
 
@@ -60,7 +60,7 @@ unset __f
 
 # _vendor_script <url> [sh|bash] — download to a temp file, then run it.
 # (Downloading first means a dropped connection can't run half a script.)
-# SHELL=bash so installers append PATH lines to ~/.bashrc, not the symlinked fish config.
+# Prefer Bash startup files where the installer honors SHELL; some vendors also write fish/conf.d.
 # _vendor_script <url> [sh|bash] [installer args…]
 _vendor_script() {
     local url=$1 shell=${2:-bash} tmp
@@ -125,7 +125,7 @@ _removable() {
     [[ $p == "$HOME"/?*/?* || $p == "$HOME"/.?* ]] || return 1
     for protected in "$HOME" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/bin" \
         "$HOME/.local/state" "$HOME/.cache" "$HOME/.ssh" "$HOME/.gnupg" "$HOME/.docker" "$HOME/.aws" \
-        "$HOME/.kube" "$HOME/.npm" "$HOME/.bun" "$HOME/go" "${PROJECTS_DIR:-$HOME/projects}" "$DOTFILES_DIR"; do
+        "$HOME/.kube" "$HOME/.npm" "$HOME/.bun" "$HOME/go" "${PROJECTS_DIR:-$HOME/projects}" "$AGENT_READY_DIR"; do
         [[ ${p%/} == "${protected%/}" ]] && return 1
     done
     return 0

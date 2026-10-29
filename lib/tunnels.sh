@@ -7,8 +7,8 @@
 # Background tunnels run through tunnel_bg, which keeps a pid, log and URL in
 # ~/.local/state/dotfiles/tunnels/. See docs/07-networking.md.
 
-[[ -n ${__CLOUD_TUNNELS_LOADED:-} ]] && return 0
-__CLOUD_TUNNELS_LOADED=1
+[[ -n ${__AGENT_READY_TUNNELS_LOADED:-} ]] && return 0
+__AGENT_READY_TUNNELS_LOADED=1
 
 TUNNEL_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/tunnels"
 TUNNEL_IDS=()
@@ -25,7 +25,7 @@ tunnel_define() {
 tunnel_get() { printf '%s' "${TUNNEL_META["$1.$2"]:-}"; }
 tunnel_known() { [[ -n ${TUNNEL_META["$1.title"]:-} ]]; }
 
-for __f in "$DOTFILES_DIR"/tunnels.d/*.sh; do
+for __f in "$AGENT_READY_DIR"/tunnels.d/*.sh; do
     [[ $(basename "$__f") == _* ]] && continue
     # shellcheck disable=SC1090
     source "$__f"

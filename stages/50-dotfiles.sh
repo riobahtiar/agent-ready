@@ -4,10 +4,10 @@
 # stage-profile: all
 # stage-desc: symlink home/ into ~, git identity, bash hooks, secrets.env, ssh perms
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
 load_config
 
-log "Linking $DOTFILES_DIR/home → ~"
+log "Linking $AGENT_READY_DIR/home → ~"
 # Files are linked one by one (not whole dirs) so tools that write next to
 # their config — fisher into ~/.config/fish, agents into ~/.claude — never
 # write into this repo.
@@ -15,26 +15,26 @@ log "Linking $DOTFILES_DIR/home → ~"
 # laptop setup) usually brings its own, and fish here doesn't use them.
 soft=(.config/starship.toml)
 while IFS= read -r -d '' src; do
-    rel=${src#"$DOTFILES_DIR/home/"}
+    rel=${src#"$AGENT_READY_DIR/home/"}
     dst="$HOME/$rel"
     if [[ " ${soft[*]} " == *" $rel "* && -e $dst && $(readlink "$dst" 2>/dev/null) != "$src" ]]; then
         step "kept your ~/$rel (delete it and re-run to use the repo's)"
         continue
     fi
     link_file "$src" "$dst"
-done < <(find "$DOTFILES_DIR/home" -type f -print0 | sort -z)
+done < <(find "$AGENT_READY_DIR/home" -type f -print0 | sort -z)
 
 # Links whose source was deleted from home/ (a retired tool's config) go too.
 # Only the directories home/ links into are scanned: walking all of $HOME
 # trips macOS privacy prompts (Desktop, Documents, iCloud).
 while IFS= read -r -d '' link; do
-    if [[ $(readlink "$link") == "$DOTFILES_DIR/home/"* && ! -e $link ]]; then
+    if [[ $(readlink "$link") == "$AGENT_READY_DIR/home/"* && ! -e $link ]]; then
         rm -f "$link" && step "removed stale link ${link/#$HOME/\~}"
     fi
 done < <(
     {
         echo "$HOME"
-        find "$DOTFILES_DIR/home" -mindepth 1 -type d | sed "s|^$DOTFILES_DIR/home|$HOME|"
+        find "$AGENT_READY_DIR/home" -mindepth 1 -type d | sed "s|^$AGENT_READY_DIR/home|$HOME|"
     } |
         while IFS= read -r d; do [[ -d $d ]] && find "$d" -maxdepth 1 -type l -print0 2>/dev/null; done
 )
@@ -50,15 +50,24 @@ log "git identity"
 git_local="$HOME/.config/git/local"
 if [[ -n ${GIT_NAME:-} && $GIT_NAME != "Your Name" ]]; then
     git config --file "$git_local" user.name "$GIT_NAME"
+elif [[ -z $(git config user.name 2>/dev/null) ]]; then
+    warn "GIT_NAME not set in config.env — set it, or: git config --file $git_local user.name 'Your Name'"
+fi
+if [[ -n ${GIT_EMAIL:-} && $GIT_EMAIL != "you@example.com" ]]; then
     git config --file "$git_local" user.email "$GIT_EMAIL"
-    ok "$GIT_NAME <$GIT_EMAIL>"
-else
-    warn "GIT_NAME not set in config.env — set it, or: git config --file $git_local user.name '…'"
+elif [[ -z $(git config user.email 2>/dev/null) ]]; then
+    warn "GIT_EMAIL not set in config.env — set it, or: git config --file $git_local user.email 'you@example.com'"
 fi
 
 log "bash hooks (agents and scripts run bash even though fish is the login shell)"
 add_line() {
     local file=$1 line=$2
+    if [[ -L $file ]]; then
+        # Managed elsewhere (another dotfiles repo): don't turn the link into a file.
+        grep -qxF "$line" "$file" 2>/dev/null ||
+            warn "$file is a symlink — add this line to it yourself: $line"
+        return 0
+    fi
     touch "$file"
     grep -qxF "$line" "$file" || printf '\n# ~/.dotfiles\n%s\n' "$line" >>"$file"
 }
@@ -97,7 +106,7 @@ secrets="$HOME/.config/secrets.env"
 if [[ ! -f $secrets ]]; then
     # (BSD install on macOS has no -D)
     mkdir -p "$(dirname "$secrets")"
-    install -m 600 "$DOTFILES_DIR/secrets.env.example" "$secrets"
+    install -m 600 "$AGENT_READY_DIR/secrets.env.example" "$secrets"
     ok "created $secrets (fill in API keys as needed)"
 fi
 chmod 600 "$secrets"

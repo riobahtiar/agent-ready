@@ -38,10 +38,16 @@ function path-list --description "Print PATH, one entry per line, flag missing d
 end
 
 function ports --description "Listening TCP ports (all, or one port)"
-    if test (count $argv) -gt 0
-        sudo ss -tlnpH "sport = :$argv[1]"
+    if command -q ss
+        if test (count $argv) -gt 0
+            sudo ss -tlnpH "sport = :$argv[1]"
+        else
+            sudo ss -tlnp
+        end
+    else if test (count $argv) -gt 0
+        sudo lsof -nP -iTCP:$argv[1] -sTCP:LISTEN
     else
-        sudo ss -tlnp
+        sudo lsof -nP -iTCP -sTCP:LISTEN
     end
 end
 

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup & Installation FAQ
+    url: https://github.com/riobahtiar/agent-ready/blob/main/docs/16-faq.md
+    about: Answers to common questions before and during server or desktop setup
+  - name: Troubleshooting Guide
+    url: https://github.com/riobahtiar/agent-ready/blob/main/docs/14-troubleshooting.md
+    about: Fixes for common SSH, DNS/TLS, Docker, mise, and sandbox issues
+  - name: Security Vulnerability (Private Report)
+    url: https://github.com/riobahtiar/agent-ready/security/advisories/new
+    about: Report security issues privately — please do not open a public issue

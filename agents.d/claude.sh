@@ -30,8 +30,8 @@ claude_jail() {
 
 claude_install() { _vendor_script https://claude.ai/install.sh; }
 claude_update() { claude update; }
-# Defaults merged into ~/.claude/settings.json; `//=` never overrides a value
-# you set yourself.
+# Defaults merged into ~/.claude/settings.json; set only when absent, never
+# overriding a value you set yourself (jq `//=` would clobber an explicit false).
 #   cleanupPeriodDays  prune old transcripts (complements `cleanup agents`)
 #   sandbox.enabled    run Bash inside bubblewrap/Seatbelt (AGENT_SANDBOX, stage 65)
 #   permissions.deny   Read rules for credential files (added, never removed);
@@ -39,14 +39,12 @@ claude_update() { claude update; }
 claude_configure() {
     have jq || return 0
     local settings="$HOME/.claude/settings.json" tmp
-    local filter='.cleanupPeriodDays //= 30'
+    local filter='.cleanupPeriodDays //= 30 | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
     if is_true "${FULL_CONTROL:-false}"; then
-        # Full control: start in bypass mode (YOLO); no credential deny rules.
+        # Permission bypass is separate from sandboxing and credential rules.
         filter+=' | .permissions.defaultMode //= "bypassPermissions"'
-    else
-        filter+=' | .permissions.deny = (((.permissions.deny // []) + $deny) | unique)'
     fi
-    is_true "${AGENT_SANDBOX:-true}" && filter+=' | .sandbox.enabled //= true'
+    is_true "${AGENT_SANDBOX:-true}" && filter+=' | (if .sandbox.enabled == null then .sandbox = ((.sandbox // {}) + {enabled: true}) else . end)'
     mkdir -p "$HOME/.claude"
     # Edit the real file if settings.json is a link (managed elsewhere).
     [[ -L $settings ]] && settings="$(readlink -f "$settings")"
@@ -54,6 +52,6 @@ claude_configure() {
     tmp="$(mktemp "$(dirname "$settings")/.settings.XXXXXX")"
     jq --argjson deny '["Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.gnupg/**)", "Read(~/.cloudflared/**)",
         "Read(~/.config/rclone/**)", "Read(~/.config/gh/**)", "Read(~/.config/secrets.env)", "Read(~/.hermes/.env)",
-        "Read(~/.dotfiles/config.env)", "Read(~/.codex/auth.json)", "Read(~/.git-credentials)", "Read(~/.netrc)",
+        "Read(~/.dotfiles/config.env)", "Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)", "Read(~/.git-credentials)", "Read(~/.netrc)",
         "Read(~/.npmrc)", "Read(~/.docker/config.json)"]' "$filter" "$settings" >"$tmp" && mv "$tmp" "$settings"
 }

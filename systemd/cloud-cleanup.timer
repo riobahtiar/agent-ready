@@ -1,6 +1,6 @@
-# Managed by ~/.dotfiles (systemd/cloud-cleanup.timer)
+# Managed by ~/.dotfiles (AgentReady; systemd/cloud-cleanup.timer)
 [Unit]
-Description=Weekly cleanup of caches and agent residue
+Description=AgentReady weekly cleanup of caches and agent residue
 
 [Timer]
 OnCalendar=Sun 04:00

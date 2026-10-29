@@ -7,18 +7,18 @@
 #   update-all claude codex  only these agents
 #   update-all tools shell   any mix of the groups below
 #   update-all --check       what's outdated, without changing anything
-#   update-all --quick       everything except apt (no sudo)
+#   update-all --quick       everything except system packages; never uses sudo
 #   update-all -n            print the plan only
 #
-# Groups: system (apt) · tools (mise: runtimes + CLIs) · agents · shell (fish
+# Groups: system (system packages) · tools (mise: runtimes + CLIs) · agents · shell (fish
 # plugins) · php (composer) · extras (uv tools, gh extensions) · dotfiles (git
 # pull ~/.dotfiles + re-link; never part of "everything", also --self).
 # Failures are reported and skipped; nothing here deletes data.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
 load_config
 
 GROUPS_ALL=(system tools agents shell php extras)
@@ -107,7 +107,7 @@ fi
 if ((${#groups[@]} + ${#agents[@]} == 0)); then
     if ((! YES)) && ui_interactive; then
         items=(
-            "system|System packages (apt full-upgrade · sudo)"
+            "system|System packages ($OS_FAMILY)"
             "tools|Runtimes + CLIs via mise (node bun go python flutter rg …)"
         )
         while read -r name; do
@@ -155,8 +155,8 @@ task() {
 }
 
 if want dotfiles; then
-    task "dotfiles (git pull)" git -C "$DOTFILES_DIR" pull --ff-only
-    task "dotfiles (re-link)" env DOTFILES_DIR="$DOTFILES_DIR" bash "$DOTFILES_DIR/stages/50-dotfiles.sh"
+    task "dotfiles (git pull)" git -C "$AGENT_READY_DIR" pull --ff-only
+    task "dotfiles (re-link)" env AGENT_READY_DIR="$AGENT_READY_DIR" bash "$AGENT_READY_DIR/stages/50-dotfiles.sh"
 fi
 
 # system_upgrade — refresh + full upgrade with this OS's package manager.
@@ -200,7 +200,16 @@ if ((${#before[@]})) && have herdr && ((! DRY)); then
 fi
 
 want shell && have fish && task "fish plugins" fish -c 'fisher update'
-want php && have composer && task "composer" sudo composer self-update --quiet
+if want php && have composer; then
+    composer_bin="$(command -v composer)"
+    if [[ -w $composer_bin ]]; then
+        task "composer" "$composer_bin" self-update --quiet
+    elif ((QUICK)); then
+        step "composer is root-owned: self-update skipped in --quick (no sudo)"
+    else
+        task "composer" sudo env COMPOSER_ALLOW_SUPERUSER=1 "$composer_bin" self-update --quiet
+    fi
+fi
 if want extras; then
     have uv && [[ -n $(uv tool list 2>/dev/null | grep -v '^-' | head -1) ]] && task "uv tools" uv tool upgrade --all
     have gh && [[ -n $(gh extension list 2>/dev/null | head -1) ]] && task "gh extensions" gh extension upgrade --all

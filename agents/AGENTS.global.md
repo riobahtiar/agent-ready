@@ -1,34 +1,34 @@
-# This machine
+# AgentReady — this machine's coding agent environment
 
-Global instructions for every coding agent on this box (Claude Code, Codex,
-OpenCode, omp, Grok, Muse, Hermes). Linked from `~/.dotfiles/agents/AGENTS.global.md`.
+Global instructions for every coding agent on this AgentReady-configured machine (Claude Code, Codex,
+OpenCode, omp, Grok, Muse, Hermes). Linked from the stable path `~/.dotfiles/agents/AGENTS.global.md`.
 A project's own AGENTS.md / CLAUDE.md overrides this file.
 
-The same file is used on the **server** (the shared Ubuntu VPS) and on
-**desktops** (macOS, Omarchy/Arch, WSL). `grep ^PROFILE ~/.dotfiles/config.env`
-tells you which one you're on. The resource rules matter most on the server.
+This file applies to server and desktop profiles, including Linux, macOS and
+WSL. Use the configured `PROFILE` when available; do not read credential-bearing
+configuration to discover it. Installed tools and services depend on the profile
+and selected toggles.
 
-## Resource budget — you are not alone
-- Ubuntu LTS server (+ zram and a swapfile) or desktop. Several agents may run at the same time.
-- Run **one heavy job at a time**: full builds, `flutter build`, `docker build`, big test suites. Prefer targeted tests (one file or package) over the whole suite.
-- Don't leave watchers or dev servers running when you're done (`vite`, `next dev`, `bun --watch`, `tsc -w`, `flutter run`). Stop what you started.
-- Cap parallelism: `go test -p 2`, `pytest -n 2`, `jest --maxWorkers=2`, `NODE_OPTIONS=--max-old-space-size=1536` for big TS builds.
-- Check `free -h` before starting something big. If memory is tight, wait or ask.
+## Shared resources
+- Before heavy jobs, check `nproc`, `free -h` and `df -h /` where available; on macOS use `sysctl -n hw.ncpu` and `vm_stat` when the Linux commands are absent.
+- Run one heavy job at a time: full builds, container builds and large test suites. Prefer a targeted file or package.
+- Choose parallelism and memory limits from available resources, allowing room for other agents and services.
+- Stop watchers and development servers you started when the task is complete.
 
 ## Runtimes and packages
 - Every runtime comes from **mise**: node (LTS), bun, go, python, uv, pnpm, flutter. Pin per project with `mise use node@22` etc. (writes `mise.toml`). Never `apt install` a language runtime, never `curl | sh` a second version manager (nvm, pyenv, gvm).
 - No global `npm i -g`. Use `bunx`/`npx` for one-offs, or `mise use -g npm:<pkg>` for tools you need permanently.
 - Python: `uv` (`uv run`, `uv add`, `uv tool run`). Never `pip install` into the system Python. Lint and format with `ruff`.
-- PHP: the system **php-fpm + composer** (PHP 8.5). If a project needs another PHP version, run it in Docker.
-- Go: `gopls` and `golangci-lint` are installed. Flutter runs headless (no device or emulator). Use `flutter test` and `flutter build web`.
+- PHP uses the system PHP/FPM and Composer where installed. Check the installed version; use a container if the project requires a different version.
+- Check tools before relying on them. Flutter can run headlessly for tests and web builds; devices and emulators are not assumed.
 
-## Tools you can rely on
+## Available tool groups (check installation before use)
 - Search/edit: `rg`, `fd`, `ast-grep` (`sg`, structural search and replace), `sd`, `jq`, `yq`, `difft`, `delta`.
 - Git/GitHub: `gh`, `lazygit`, `gitleaks`. HTTP: `xh`, `hurl` (assertions in plain files: prefer it for API checks), `oha` (load).
 - Data: `duckdb` (SQL over CSV/JSON/Parquet), `usql` (any SQL database).
 - Quality: `biome` (JS/TS format + lint), `ruff` + `ty` (Python), `golangci-lint`, `shellcheck`, `shfmt`, `hadolint`, `trivy`, `osv-scanner`.
 - Run things: `just`, `watchexec`, `process-compose`, `air` (Go), `act` (GitHub Actions locally), `docker compose`.
-- Cloud: `aws`, `s5cmd`, `rclone`, `wrangler`, `cf` (Cloudflare, `cf cli search "<what>"` finds commands), `tofu`. They're signed in by the user; never run `login`/`configure` yourself.
+- Cloud: `aws`, `s5cmd`, `rclone`, `wrangler`, `cf`, `tofu`. Authentication is user-managed; never run `login` or `configure` without authorization.
 - Secrets in git: `sops` + `age`.
 
 ## Git and worktrees
@@ -37,7 +37,7 @@ tells you which one you're on. The resource rules matter most on the server.
 - Run `gitleaks protect --staged` before committing in repos that handle credentials. Never commit `.env` files.
 
 ## Docker
-- Published ports bind to **127.0.0.1 by default** (daemon `"ip": "127.0.0.1"`). Docker bypasses the ufw firewall, so never publish `0.0.0.0:` ports. nginx is the only public entry point.
+- Use explicit **127.0.0.1** port bindings (`-p 127.0.0.1:3000:3000`, Compose `"127.0.0.1:3000:3000"`). Daemon loopback defaults only cover the default bridge and newly created user-defined bridges; existing networks are not migrated. Docker bypasses ufw. Never use public binds; require Engine 28+ to avoid its documented older-engine L2 exposure.
 - Give containers memory limits (`mem_limit` / `deploy.resources.limits.memory`), and use `restart: unless-stopped` only for things meant to stay up.
 - `docker compose down` what you started for testing. Never `docker volume prune` or delete volumes you didn't create.
 
@@ -66,23 +66,25 @@ always pass arguments**; a missing one fails fast instead of prompting.
 - Only `~/.dotfiles` is trusted. If mise says a project's config isn't trusted, stop and ask the user to review and `mise trust` it. Never run `mise trust` yourself.
 
 ## Sandboxing
-- Claude Code's sandbox is on (bubblewrap/Seatbelt). If a command fails with
-  "Operation not permitted" or a blocked domain, say so; don't hunt for a way around it.
-- Never read or copy `~/.ssh`, `~/.aws`, `~/.config/rclone`, `~/.cloudflared`
-  or the secret files above, even when you could.
+- Claude Code's sandbox setting depends on `AGENT_SANDBOX` and the effective `~/.claude/settings.json`. Do not assume it is enabled; existing user settings are preserved.
+- `AGENT_SANDBOX=false` skips enabling the sandbox; it does not remove credential read-deny rules. These rules are always merged, including with `FULL_CONTROL=true`.
+- Permission approval modes and OS-level sandbox isolation are different controls. Full control or permission bypass does not authorize bypassing security isolation or accessing credentials.
+- If an operation is blocked by isolation or a network policy, report it rather than finding a workaround.
+- Never read or copy `~/.ssh`, `~/.aws`, `~/.config/rclone`, `~/.cloudflared` or the secret files above, even when technically accessible.
 
-## Full control (when `sudo -n true` succeeds)
-The owner runs this box as a playground: passwordless sudo, Claude and Codex in
-YOLO mode. You may install packages, edit system config, restart services and
-use Docker freely. What you must NOT do, because it is what keeps outsiders out:
-- weaken SSH (password login, root login, `sshd_config.d/10-cloud.conf`), or
-  remove `~/.ssh/authorized_keys` entries;
-- disable or loosen ufw / fail2ban, or open ports beyond 22/80/443;
-- publish Docker ports on `0.0.0.0`, or put anything on the internet without
-  TLS + auth (the Hermes dashboard is a web terminal);
-- start public tunnels without asking (see `tunnel` above).
-Prefer changing `~/.dotfiles` + re-running a stage over hand-editing `/etc`
-files a stage manages (they'd be overwritten).
+## Full control
+`FULL_CONTROL=true` configures supported agent permission-bypass defaults and
+passwordless sudo. A successful `sudo -n true` alone does not establish this
+configuration or authorize unrelated changes. Within the user's task, full
+control permits package installation, managed system configuration changes and
+service restarts. It does not waive credential protections, isolation, or these
+network safety rules:
+- Do not weaken SSH authentication or remove authorized keys.
+- Do not disable or loosen the firewall or fail2ban, or open additional public ports without explicit authorization.
+- Do not publish containers on all interfaces or expose services without TLS and appropriate authentication.
+- Ask before starting public tunnels.
+Prefer changing `~/.dotfiles` and re-running the relevant stage over editing
+generated system files that a stage will overwrite.
 
 ## Things that need a human
 - Without full control, `sudo` asks for a password: stop and tell the user the exact command.

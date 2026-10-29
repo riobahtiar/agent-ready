@@ -17,6 +17,9 @@ while IFS= read -r f; do sh_files+=("$f"); done < <({
 note "bash -n (${#sh_files[@]} files)"
 for f in "${sh_files[@]}"; do bash -n "$f" || fail=1; done
 
+note "sh -n (certbot reload hook)"
+sh -n system/certbot-reload-nginx.sh || fail=1
+
 if command -v shellcheck >/dev/null; then
     note "shellcheck"
     shellcheck -x -S warning "${sh_files[@]}" || fail=1
@@ -39,10 +42,19 @@ for f in stages/[0-9]*.sh; do
         note "  $f: missing '# stage-desc:'"
         fail=1
     }
-    grep -qE '^# stage-os: [a-z+,]+$' "$f" || {
-        note "  $f: missing '# stage-os: any|linux|debian+systemd…'"
+    stage_os=$(grep '^# stage-os: ' "$f" || true)
+    if [[ ! $stage_os =~ ^'# stage-os: '[a-z]+([,+][a-z]+)*$ ]]; then
+        note "  $f: missing or malformed '# stage-os:'"
         fail=1
-    }
+    else
+        IFS=',+' read -r -a os_tokens <<<"${stage_os#\# stage-os: }"
+        for token in "${os_tokens[@]}"; do
+            if [[ ! $token =~ ^(any|linux|macos|debian|arch|fedora|systemd|wsl|nowsl)$ ]]; then
+                note "  $f: unknown stage-os token '$token'"
+                fail=1
+            fi
+        done
+    fi
     grep -qE '^# stage-profile: (all|server|desktop)$' "$f" || {
         note "  $f: missing '# stage-profile: all|server|desktop'"
         fail=1
@@ -95,7 +107,7 @@ if git ls-files --error-unmatch config.env >/dev/null 2>&1; then
     fail=1
 fi
 # (a mise shim without an installed version exists but can't run: test it)
-if gitleaks version >/dev/null 2>&1; then gitleaks detect --no-banner --redact -q || fail=1; fi
+if gitleaks version >/dev/null 2>&1; then gitleaks detect --no-banner --redact --log-level warn || fail=1; fi
 
 ((fail)) && {
     note "FAILED"

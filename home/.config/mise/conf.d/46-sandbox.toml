@@ -1,7 +1,7 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/46-sandbox.toml) — agent
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/46-sandbox.toml) — agent
 # isolation. The OS half (bubblewrap, socat, AppArmor, gVisor) is stage
-# 72-sandbox and the GVISOR toggle; the front end is `sandbox` (bin/sandbox).
+# 65-sandbox and the GVISOR toggle; the front end is `sandbox` (bin/sandbox).
 [tools]
 "npm:@anthropic-ai/sandbox-runtime" = "latest"  # `srt`: filesystem + network jail for any command/agent
 "npm:@devcontainers/cli" = "latest"             # `devcontainer up` for repos that ship .devcontainer/
-# "container-use" = "latest"   # Dagger's per-agent containers over MCP (needs the Dagger engine, ~500 MB RAM)
+# "container-use" = "latest"   # Dagger's per-agent containers over MCP (needs the Dagger engine)

@@ -5,7 +5,7 @@
 # stage-inputs: tunnels.d
 # stage-desc: Tailscale (TAILSCALE=true) + dev-tunnel readiness (cloudflared, zrok, pinggy — see `tunnel providers`)
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
 load_config
 
 setup_tailscale_linux() {
@@ -61,5 +61,5 @@ else
 fi
 
 log "Dev tunnels"
-run_as_user "$DOTFILES_DIR/bin/tunnel" providers >&2 || true
+run_as_user "$AGENT_READY_DIR/bin/tunnel" providers >&2 || true
 step "share a dev server: tunnel   (or: tunnel 3000 cloudflare)"

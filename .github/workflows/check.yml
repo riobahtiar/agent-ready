@@ -1,0 +1,31 @@
+name: AgentReady Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint & Contract Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Official usage: https://github.com/jdx/mise-action
+      - uses: jdx/mise-action@v5
+
+      - name: Install fish and Python
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fish python3
+
+      - name: Check formatting (shfmt)
+        run: |
+          mise exec -- shfmt -d -i 4 install.sh bootstrap.sh setup-server.sh setup-desktop.sh lib stages scripts shell bin agents.d tunnels.d
+
+      - name: Run static & contract checks
+        run: mise run check

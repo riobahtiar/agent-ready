@@ -14,11 +14,11 @@
 # Details: docs/06-tools-and-agents.md
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/configure.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/configure.sh"
 load_config
-CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+CONFIG_FILE="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
 
 usage() {
     sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
@@ -129,15 +129,15 @@ cmd_retire() {
     fi
     config_agents del "$name"
     mkdir -p "$AGENTS_DIR/retired"
-    if git -C "$DOTFILES_DIR" ls-files --error-unmatch "agents.d/$name.sh" >/dev/null 2>&1; then
-        git -C "$DOTFILES_DIR" mv "agents.d/$name.sh" "agents.d/retired/$name.sh"
+    if git -C "$AGENT_READY_DIR" ls-files --error-unmatch "agents.d/$name.sh" >/dev/null 2>&1; then
+        git -C "$AGENT_READY_DIR" mv "agents.d/$name.sh" "agents.d/retired/$name.sh"
     else
         mv "$AGENTS_DIR/$name.sh" "$AGENTS_DIR/retired/$name.sh"
     fi
     local guide
     guide="$(agent_get "$name" guide)"
     [[ $guide != - ]] && step "the shared guide link ${guide} stays until you delete it"
-    grep -q "b-$name" "$DOTFILES_DIR/home/.config/fish/cloud/ai_bypass.fish" 2>/dev/null &&
+    grep -q "b-$name" "$AGENT_READY_DIR/home/.config/fish/cloud/ai_bypass.fish" 2>/dev/null &&
         step "its b-$name wrapper is still in home/.config/fish/cloud/ai_bypass.fish — delete it if you like"
     ok "$name retired — commit ~/.dotfiles to record it"
 }
@@ -146,8 +146,8 @@ cmd_restore() {
     local name=${1:-}
     [[ -n $name ]] || usage 2
     [[ -f $AGENTS_DIR/retired/$name.sh ]] || die "no agents.d/retired/$name.sh"
-    if git -C "$DOTFILES_DIR" ls-files --error-unmatch "agents.d/retired/$name.sh" >/dev/null 2>&1; then
-        git -C "$DOTFILES_DIR" mv "agents.d/retired/$name.sh" "agents.d/$name.sh"
+    if git -C "$AGENT_READY_DIR" ls-files --error-unmatch "agents.d/retired/$name.sh" >/dev/null 2>&1; then
+        git -C "$AGENT_READY_DIR" mv "agents.d/retired/$name.sh" "agents.d/$name.sh"
     else
         mv "$AGENTS_DIR/retired/$name.sh" "$AGENTS_DIR/$name.sh"
     fi
@@ -173,8 +173,8 @@ install)
         guide="$(agent_get "$name" guide)"
         if [[ $guide != - ]]; then
             guide="$(_expand_home "$guide")"
-            if [[ ! -e $guide || $(readlink "$guide" 2>/dev/null) == "$DOTFILES_DIR/agents/AGENTS.global.md" ]]; then
-                link_file "$DOTFILES_DIR/agents/AGENTS.global.md" "$guide"
+            if [[ ! -e $guide || $(readlink "$guide" 2>/dev/null) == "$AGENT_READY_DIR/agents/AGENTS.global.md" ]]; then
+                link_file "$AGENT_READY_DIR/agents/AGENTS.global.md" "$guide"
             fi
         fi
         login="$(agent_get "$name" login)"
@@ -183,7 +183,7 @@ install)
     ;;
 update)
     shift
-    exec "$DOTFILES_DIR/bin/update-all" "${@:-agents}"
+    exec "$AGENT_READY_DIR/bin/update-all" "${@:-agents}"
     ;;
 login) cmd_login "${2:-}" ;;
 herdr) herdr_hooks ;;

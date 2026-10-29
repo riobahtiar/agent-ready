@@ -9,12 +9,12 @@
 # Items are "value|Label". Labels are what people see; the value is printed.
 # Keep commas out of labels (gum's --selected is comma-separated).
 
-[[ -n ${__CLOUD_UI_LOADED:-} ]] && return 0
-__CLOUD_UI_LOADED=1
+[[ -n ${__AGENT_READY_UI_LOADED:-} ]] && return 0
+__AGENT_READY_UI_LOADED=1
 
 ui_interactive() { [[ -t 0 && -t 1 ]] && has_tty; }
 
-_ui_gum() { have gum && [[ ${CLOUD_UI:-} != plain ]]; }
+_ui_gum() { have gum && [[ ${AGENT_READY_UI:-} != plain ]]; }
 
 # _ui_label <value> <item...> — label of the item whose value matches.
 _ui_label() {

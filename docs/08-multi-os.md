@@ -1,11 +1,11 @@
-# Multi-OS: server and desktop
+# macOS and Linux setup for AI coding agents
 
-One repo sets up two kinds of machine. The **profile** decides what's worth
-installing, and each stage's OS rule decides what's possible.
+AgentReady sets up server and desktop developer environments. The **profile**
+decides what's worth installing, and each stage's OS rule decides what's possible.
 
 | | `server` | `desktop` |
 |---|---|---|
-| For | this VPS, any headless Linux box | a laptop or desktop you sit at: macOS, Omarchy/Arch, Ubuntu/Fedora desktop, WSL |
+| For | Ubuntu LTS server (**tested on the latest Ubuntu LTS**) or any headless Linux server | a laptop or desktop you sit at: macOS, Omarchy/Arch, Ubuntu/Fedora desktop, WSL |
 | Entry point | `./setup-server.sh` | `./setup-desktop.sh` |
 | Default when | Linux with no graphical session installed | macOS, WSL, or Linux with a Wayland/X session |
 
@@ -16,7 +16,7 @@ profile are not undone.
 
 ## What each stage does where
 
-(For the item-by-item comparison of the VPS, Omarchy and macOS, see
+(For the item-by-item comparison across Ubuntu LTS Server, Omarchy/Arch, and macOS, see
 [15 What gets installed where](15-what-gets-installed.md).)
 
 | Stage | server | desktop | OS rule |
@@ -25,24 +25,34 @@ profile are not undone.
 | 10 system: zram, swap, sysctl, journald, unattended upgrades, linger | ✓ | – | Linux + systemd, not WSL |
 | 20 security: SSH hardening, ufw, fail2ban | ✓ | – | Debian/Arch + systemd, not WSL |
 | 30 Docker Engine + daemon.json (merged, 127.0.0.1 binds) | ✓ (you in docker group) | ✓ (`DOCKER=true`; group only if `DOCKER_SUDOLESS=true`) | Linux + systemd |
-| 40 nginx, certbot, PHP-FPM | ✓ | – | Debian/Ubuntu |
+| 40 nginx, certbot, PHP-FPM | ✓ | – | Debian/Ubuntu + systemd, not WSL |
 | 50 dotfiles links, git identity, shell hooks | ✓ | ✓ | any |
 | 60 mise tools, fisher plugins | ✓ | ✓ | any |
 | 65 sandbox: bubblewrap, socat, AppArmor fix | ✓ | ✓ | any (macOS: Seatbelt built in) |
 | 70 agent CLIs, herdr hooks | ✓ | ✓ | any |
 | 75 Tailscale + tunnels | ✓ | ✓ | any |
-| 80 Hermes dashboard + nginx/TLS | ✓ | – | Debian/Ubuntu |
+| 80 Hermes dashboard + nginx/TLS | ✓ | – | Debian/Ubuntu + systemd, not WSL |
+| 85 optional desktop apps (`DESKTOP_APPS`, empty by default) | – | ✓ (selected apps only) | any; each app checks OS/architecture |
 | 90 cleanup timer, doctor | ✓ (timer on) | ✓ (timer off: a laptop is asleep at 04:00) | Linux + systemd |
 
 `./install.sh --status` shows the same thing for the machine you're on,
 including why a stage is skipped ("needs systemd", "server profile only", …).
 `./install.sh --list` shows every stage's rule.
 
+There are **13 stages total**; Debian-family systemd servers still run the same
+12 because stage 85 is desktop-only. macOS and Linux desktop stage lists add 85,
+which installs nothing when `DESKTOP_APPS` is empty. Its `stage-os: any` header
+does not imply that every app supports every platform: an app with no native
+package on the current OS warns and is skipped (obsidian falls back to Flathub
+on Linux), and macOS casks install with `--adopt`, so an app already in
+`/Applications` is adopted. See the
+[app matrix](15-what-gets-installed.md#optional-desktop-apps-stage-85).
+
 ## macOS: Homebrew + mise
 
 ```bash
 # Homebrew first: https://brew.sh
-git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
+git clone https://github.com/riobahtiar/agent-ready ~/.dotfiles
 ~/.dotfiles/setup-desktop.sh
 ```
 
@@ -69,7 +79,7 @@ opinions, and this setup is built to sit alongside them:
 | updates via `omarchy update` | `update-all` covers what this repo installed; run both |
 
 ```bash
-git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
+git clone https://github.com/riobahtiar/agent-ready ~/.dotfiles
 ~/.dotfiles/setup-desktop.sh
 ```
 
@@ -88,9 +98,10 @@ Same as above with apt or dnf. On a GUI Linux the default profile is already
 
 Use WSL 2 with systemd (`/etc/wsl.conf`: `[boot]` `systemd=true`), Ubuntu as
 the distro, then `./setup-desktop.sh`. Docker: if Docker Desktop's WSL
-integration is on, stage 30 skips the engine. Tailscale: run it on Windows. The
-browser stays Windows' (no `BROWSER=echo`).
-
+integration is enabled, stage 30 skips installing the Linux engine. Tailscale:
+run it on Windows. Headless Linux servers set `BROWSER=echo` so OAuth sign-in
+flows print a URL to copy; WSL skips `BROWSER=echo` so links open in your
+Windows browser.
 ## Adding OS support
 
 - A package with a different name: add a row to `PKG_TABLE` in `lib/pkg.sh`.
@@ -99,7 +110,10 @@ browser stays Windows' (no `BROWSER=echo`).
 - Branch inside a stage with `$OS_FAMILY` (`debian arch fedora macos`),
   `$IS_WSL`, `$IS_OMARCHY`, `$HAS_SYSTEMD`, `$PROFILE`.
 
-Tested: Ubuntu 26.04 server end to end (systemd container), Arch Linux stages
-05 + 50 (container), plus OS detection and package mapping. macOS and Omarchy
-on real hardware haven't been run yet, so treat the first run there as a
-dry run you watch.
+Testing status: prior repository records document end-to-end testing of the
+`server` profile on **Ubuntu 26.04 (the latest Ubuntu LTS) in systemd containers**,
+not a full production deployment or hardware certification. Arch Linux container
+checks cover OS detection, package mapping, and core stages. **macOS and Omarchy
+desktop setups have not been verified end to end**; their documented behaviour
+follows the stage rules and merge logic. Replaced files are backed up to
+`~/.dotfiles-backup/<time>/`.

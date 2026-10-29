@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# install.sh — set up this machine from the stages in ./stages.
+# install.sh — set up this machine with AgentReady stages in ./stages.
 #
 #   ./install.sh                 at a terminal: settings wizard (first run), then a menu
-#   ./install.sh --all           every stage that applies to this OS/profile, in order
+#   ./install.sh -a, --all       every stage that applies to this OS/profile, in order
 #   ./install.sh --changed       only stages that never ran, failed, or whose files/config changed
 #   ./install.sh --renew         everything again + upgrade all tools/agents + re-render sites
 #   ./install.sh docker web      just these stages (name or number)
-#   ./install.sh --status        what ran when, what changed, what's skipped here and why
-#   ./install.sh --configure     edit config.env through prompts
-#   ./install.sh --list          stages with their OS/profile rules
-#   -y                           yes to every question (non-interactive)
+#   ./install.sh -s, --status    what ran when, what changed, what's skipped here and why
+#   ./install.sh -c, --configure edit config.env through prompts
+#   ./install.sh -l, --list      stages with their OS/profile rules
+#   -y, --yes                   yes to every question (non-interactive)
+#   ./setup-server.sh / ./setup-desktop.sh select the corresponding profile
 #
 # Stages are idempotent: re-running one is always safe. Once setup has run,
 # install.sh won't silently re-run everything without a TTY: pass --all,
@@ -40,17 +41,17 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 fi
 set -Eeuo pipefail
 
-DOTFILES_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-export DOTFILES_DIR
-SELF="$DOTFILES_DIR/install.sh" # absolute: `bash install.sh` re-execs too
+AGENT_READY_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+export AGENT_READY_DIR
+SELF="$AGENT_READY_DIR/install.sh" # absolute: `bash install.sh` re-execs too
 # shellcheck source=lib/common.sh
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/configure.sh"
-source "$DOTFILES_DIR/lib/stages.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/configure.sh"
+source "$AGENT_READY_DIR/lib/stages.sh"
 
 usage() {
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -99,20 +100,27 @@ orig_args=("${orig_args[@]}")
 asking() { [[ -z $MODE && ${ASSUME_YES:-0} != 1 ]] && ui_interactive; }
 
 if ((CONFIGURE)) || { asking && config_looks_unset; }; then
-    if ((CONFIGURE)) || ui_confirm "config.env still has placeholders — fill it in now?" yes; then
+    if ((CONFIGURE)) || ui_confirm "Set up machine configuration (identity, features, optional domains) now?" yes; then
         configure_wizard || die "settings wizard cancelled"
     fi
     if ((CONFIGURE)) && [[ -z $MODE ]]; then
         { ui_interactive && ui_confirm "Run the installer now?" yes; } || exit 0
     fi
 fi
-[[ -f ${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env} ]] ||
+[[ -f ${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env} ]] ||
     die "Missing config.env — run: ./install.sh --configure (or cp config.env.example config.env)"
 load_config
+id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
+# Save caller overrides (config_snapshot_env) once load_config has accepted
+# them, so --changed hashes the settings actually used and root reads them
+# after sudo. Secrets travel this way too, never on a sudo/env command line.
+CONFIG_FILE="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
+for var in "${!CONFIG_ENV_OVERRIDES[@]}"; do
+    config_set_owned "$CONFIG_FILE" "$var" "${!var}"
+done
 
 # The profile is always written down once decided: auto-detection can change
 # under it (an `ssh -X` session, a package that installs a desktop session).
-CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
 if [[ -n ${PROFILE_OVERRIDE:-} && $PROFILE_OVERRIDE != "$PROFILE" ]] && [[ -n $(config_value PROFILE) ]] && setup_done; then
     # Never auto-answered by -y: switching skips (or adds) whole server stages.
     has_tty || die "this machine is set up as '$PROFILE' — switching to '$PROFILE_OVERRIDE' needs you at a terminal"
@@ -128,11 +136,11 @@ export PROFILE
 
 # Everything (shell hooks, PATH, the cleanup timer, the sandbox policy) expects
 # the repo at ~/.dotfiles. Elsewhere, link it there rather than half-work.
-if [[ $DOTFILES_DIR != "$TARGET_HOME/.dotfiles" ]]; then
+if [[ $AGENT_READY_DIR != "$TARGET_HOME/.dotfiles" ]]; then
     if [[ ! -e $TARGET_HOME/.dotfiles && ! -L $TARGET_HOME/.dotfiles ]]; then
-        run_as_user ln -s "$DOTFILES_DIR" "$TARGET_HOME/.dotfiles"
-        step "linked ~/.dotfiles → $DOTFILES_DIR"
-    elif [[ $(readlink -f "$TARGET_HOME/.dotfiles") != "$DOTFILES_DIR" ]]; then
+        run_as_user ln -s "$AGENT_READY_DIR" "$TARGET_HOME/.dotfiles"
+        step "linked ~/.dotfiles → $AGENT_READY_DIR"
+    elif [[ $(readlink -f "$TARGET_HOME/.dotfiles") != "$AGENT_READY_DIR" ]]; then
         die "~/.dotfiles is another checkout — run install.sh from there, or move it aside"
     fi
 fi
@@ -151,7 +159,7 @@ count_changed() {
 }
 
 if asking; then
-    ui_title "$OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' · WSL') · profile: $PROFILE · user: $TARGET_USER"
+    ui_title "AgentReady · $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' · WSL') · profile: $PROFILE · user: $TARGET_USER"
     if setup_done; then
         changed="$(count_changed)"
         step "already set up — last run $(setup_last_run) · $changed stage(s) changed or never applied since"
@@ -205,20 +213,20 @@ fi
 
 if [[ $OS_KIND == linux ]] && ! is_root; then
     log "Re-running with sudo…"
-    # sudo resets the environment; carry over the knobs the docs mention.
+    # Explicit config overrides were saved before sudo. Do not pass derived
+    # defaults as if they were explicit overrides and freeze auto settings.
     passthrough=()
     # (SSH_CONNECTION: stage 20 never lets fail2ban ban the address you're installing from.)
-    # DOTFILES_CONFIG only from inside the repo: root sources that file.
-    if [[ -n ${DOTFILES_CONFIG:-} && $(readlink -f "$DOTFILES_CONFIG") != "$DOTFILES_DIR"/* ]]; then
-        die "DOTFILES_CONFIG must point inside $DOTFILES_DIR (root sources it)"
+    # AGENT_READY_CONFIG only from inside the repo: root sources that file.
+    if [[ -n ${AGENT_READY_CONFIG:-} && $(readlink -f "$AGENT_READY_CONFIG") != "$AGENT_READY_DIR"/* ]]; then
+        die "AGENT_READY_CONFIG must point inside $AGENT_READY_DIR (root sources it)"
     fi
-    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE SSH_CONNECTION; do
-        [[ -n ${!var:-} ]] && passthrough+=("$var=${!var}")
+    for var in HERMES_RESET_PASSWORD ASSUME_YES AGENT_READY_CONFIG PROFILE_OVERRIDE SSH_CONNECTION AGENT_READY_UI; do
+        [[ -v $var ]] && passthrough+=("$var=${!var}")
     done
     exec sudo -- env "${passthrough[@]}" "$SELF" "${orig_args[@]}"
 fi
 [[ $OS_KIND == macos ]] && is_root && die "on macOS run install.sh as yourself, not with sudo (Homebrew refuses root)"
-id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
 
 [[ $MODE == renew ]] && export RENEW=1
 export INSTALL_MODE=$MODE
@@ -296,7 +304,7 @@ if ((ran == 0)); then
     pick) die "No stage matched: ${selected[*]} (see --list)" ;;
     esac
 fi
-ok "Done: $ran stage(s) in $((SECONDS - started))s$( ((skipped)) && echo " · $skipped not for this machine")"
+ok "AgentReady setup complete: $ran stage(s) in $((SECONDS - started))s$( ((skipped)) && echo " · $skipped not for this machine")"
 ((${#incomplete[@]})) && warn "incomplete (re-run with --changed once fixed): ${incomplete[*]}"
 ((${#skipped_server[@]})) && warn "server stages NOT applied on this OS: ${skipped_server[*]} — this box lacks that protection"
 
@@ -304,27 +312,40 @@ if [[ $MODE == renew ]]; then
     log "Renew: remaining upgrades and site re-render"
     # Stages already upgraded mise tools and agents. What's left runs here
     # directly: we're root, and a user-side sudo couldn't prompt now.
-    run_as_user "$DOTFILES_DIR/bin/update-all" -y extras || warn "update-all extras reported failures"
+    run_as_user "$AGENT_READY_DIR/bin/update-all" -y extras || warn "update-all extras reported failures"
     if have composer; then
         if [[ $OS_KIND == macos ]]; then composer self-update --quiet; else COMPOSER_ALLOW_SUPERUSER=1 composer self-update --quiet; fi ||
             warn "composer self-update failed"
     fi
     if [[ $PROFILE == server ]] && have nginx; then
-        "$DOTFILES_DIR/bin/site" renew || warn "site renew reported failures"
+        "$AGENT_READY_DIR/bin/site" renew || warn "site renew reported failures"
         if have certbot; then certbot renew --quiet || warn "certbot renew failed"; fi
     fi
 fi
 
-if [[ $MODE == all && ! -f $DOTFILES_DIR/.state/next-steps-shown ]]; then
-    mkdir -p "$DOTFILES_DIR/.state"
-    touch "$DOTFILES_DIR/.state/next-steps-shown"
-    cat >&2 <<EOF
+if [[ $MODE == all && ! -f $AGENT_READY_DIR/.state/next-steps-shown ]]; then
+    mkdir -p "$AGENT_READY_DIR/.state"
+    touch "$AGENT_READY_DIR/.state/next-steps-shown"
+    if [[ $PROFILE == server ]]; then
+        cat >&2 <<EOF
 
 Next steps (docs/01-first-setup.md, step 5 onwards):
-  1. Log out and back in (docker group + login shell take effect)
-  2. Run:                 vps        (menu for everything below)
+  1. Log out and back in (group membership + login shell take effect)
+  2. Run:                 vps
   3. Sign in to agents:   agents login
-  4. Hermes:              hermes setup  then  hermes-up
-  5. Health check:        doctor
+  4. Health check:        doctor
 EOF
+        if is_true "$HERMES"; then
+            printf '  5. Hermes:              hermes setup  then  hermes-up\n' >&2
+        fi
+    else
+        cat >&2 <<EOF
+
+Next steps (docs/08-multi-os.md):
+  1. Open a new terminal (shell and PATH changes take effect)
+  2. Sign in to agents:   agents login
+  3. Health check:        doctor
+  4. Changed settings?    ./setup-desktop.sh --changed
+EOF
+    fi
 fi

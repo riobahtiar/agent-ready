@@ -29,7 +29,7 @@
 # volumes, agent transcripts newer than --days.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
 load_config # PROJECTS_DIR and friends from config.env
 
 # wizard — pick targets and options, preview with -n, then re-run for real.

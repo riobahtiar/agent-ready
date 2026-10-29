@@ -5,9 +5,9 @@
 # stage-inputs: nginx/templates systemd scripts agents.d/hermes.sh
 # stage-desc: Hermes agent + web dashboard behind nginx/TLS at HERMES_DOMAIN, Telegram credentials
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/nginx.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/nginx.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
 load_config
 
 if ! is_true "$HERMES"; then
@@ -34,7 +34,7 @@ port="$HERMES_DASHBOARD_PORT"
 public_url="https://$HERMES_DOMAIN"
 
 log "Hermes agent"
-run_as_user bash -c "source '$DOTFILES_DIR/lib/common.sh'; source '$DOTFILES_DIR/lib/agents.sh'; agent_install hermes" ||
+run_as_user bash -c "source '$AGENT_READY_DIR/lib/common.sh'; source '$AGENT_READY_DIR/lib/agents.sh'; agent_install hermes" ||
     warn "the Hermes installer reported a failure"
 hermes_bin="$(run_as_user bash -lc 'command -v hermes' || true)"
 [[ -x $hermes_bin ]] || hermes_bin="$TARGET_HOME/.local/bin/hermes"
@@ -53,9 +53,9 @@ fi
 # writing there would follow a planted symlink (e.g. .env → /etc/shadow).
 # Values travel on stdin, never on a command line.
 set_env() {
-    printf '%s' "$2" | run_as_user bash -c 'source "$DOTFILES_DIR/lib/common.sh"; env_set "$1" "$2" "$(cat)"' _ "$hermes_env" "$1"
+    printf '%s' "$2" | run_as_user bash -c 'source "$AGENT_READY_DIR/lib/common.sh"; env_set "$1" "$2" "$(cat)"' _ "$hermes_env" "$1"
 }
-get_env() { run_as_user bash -c 'source "$DOTFILES_DIR/lib/common.sh"; env_get "$1" "$2"' _ "$hermes_env" "$1"; }
+get_env() { run_as_user bash -c 'source "$AGENT_READY_DIR/lib/common.sh"; env_get "$1" "$2"' _ "$hermes_env" "$1"; }
 run_as_user install -d -m 700 "$TARGET_HOME/.hermes"
 
 log "Telegram"
@@ -91,7 +91,7 @@ if [[ -z $(get_env HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH) || ${HERMES_RESET_
         [[ $password == "$again" ]] || die "passwords differ"
     fi
     ((${#password} >= 12)) || die "dashboard password must be at least 12 characters"
-    hash="$(printf '%s' "$password" | run_as_user "$DOTFILES_DIR/scripts/hermes-hash-password.sh")" ||
+    hash="$(printf '%s' "$password" | run_as_user "$AGENT_READY_DIR/scripts/hermes-hash-password.sh")" ||
         die "could not hash the password with Hermes' own helper — see scripts/hermes-hash-password.sh"
     set_env HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH "$hash"
     unset password again hash
@@ -105,7 +105,7 @@ log "Dashboard behind the proxy"
 run_as_user "$hermes_bin" config set dashboard.public_url "$public_url" >/dev/null ||
     warn "'hermes config set dashboard.public_url' failed — set it in ~/.hermes/config.yaml"
 
-render "$DOTFILES_DIR/systemd/hermes-dashboard.service" \
+render "$AGENT_READY_DIR/systemd/hermes-dashboard.service" \
     USER="$TARGET_USER" HOME="$TARGET_HOME" HERMES_BIN="$hermes_bin" PORT="$port" |
     as_root tee /etc/systemd/system/hermes-dashboard.service >/dev/null
 as_root systemctl daemon-reload

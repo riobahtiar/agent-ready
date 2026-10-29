@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/starship.toml) — shows user@host so a
+# Managed by ~/.dotfiles (AgentReady; home/.config/starship.toml) — shows user@host so a
 # remote shell is never mistaken for local.
 format = """
 [░▒▓](#a3aed2)\

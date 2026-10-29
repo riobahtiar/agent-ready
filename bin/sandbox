@@ -7,18 +7,19 @@
 #                              network only to the allowlist, no ~/.ssh / ~/.aws / secrets
 #   sandbox agent <name> [args…]   an agent CLI under srt (e.g. sandbox agent codex)
 #   sandbox box [image]        throwaway container with this directory at /work
-#                              (gVisor when installed · 2 CPUs · 2 GB · no published ports)
+#                              (gVisor when installed · up to 2 CPUs · 2 GB · no published ports)
 #
+# SANDBOX_CPUS defaults to min(2, host CPUs); SANDBOX_MEMORY defaults to 2g.
 # Policy: ~/.srt-settings.json (from ~/.dotfiles/home). Layers and trade-offs:
 # docs/09-sandboxing.md. Claude Code also has its own: /sandbox inside a session.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
 load_config
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 SANDBOX_IMAGE="${SANDBOX_IMAGE:-mcr.microsoft.com/devcontainers/base:ubuntu}"
@@ -177,7 +178,10 @@ cmd_agent() {
 cmd_box() {
     local image=${1:-$SANDBOX_IMAGE}
     have docker || die "docker is not installed"
-    local -a args=(--rm -it --init --memory 2g --cpus 2 --pids-limit 1024
+    local host_cpus default_cpus
+    if [[ $OS_KIND == macos ]]; then host_cpus="$(sysctl -n hw.ncpu)"; else host_cpus="$(nproc)"; fi
+    default_cpus=$((host_cpus < 2 ? host_cpus : 2))
+    local -a args=(--rm -it --init --memory "${SANDBOX_MEMORY:-2g}" --cpus "${SANDBOX_CPUS:-$default_cpus}" --pids-limit 1024
         --security-opt no-new-privileges -v "$PWD:/work" -w /work --hostname sandbox)
     if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q runsc; then
         args+=(--runtime runsc)
@@ -205,7 +209,7 @@ menu() {
         [[ -n $cmd ]] && cmd_run bash -c "$cmd"
         ;;
     box) cmd_box ;;
-    policy) exec "${EDITOR:-nano}" "$DOTFILES_DIR/home/.srt-settings.json" ;;
+    policy) exec "${EDITOR:-nano}" "$AGENT_READY_DIR/home/.srt-settings.json" ;;
     esac
 }
 

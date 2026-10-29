@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# Shared helpers for install.sh, stages/*.sh and bin/*. Source it, don't run it.
+# AgentReady shared helpers for install.sh, stages/*.sh and bin/*. Source it, don't run it.
 # Everything here must be idempotent and safe to source more than once.
 
-[[ -n ${__CLOUD_COMMON_LOADED:-} ]] && return 0
-__CLOUD_COMMON_LOADED=1
+[[ -n ${__AGENT_READY_COMMON_LOADED:-} ]] && return 0
+__AGENT_READY_COMMON_LOADED=1
 
 # bash ≥ 4 for every command, also when /bin/bash (3.2) comes first on macOS's
 # PATH: re-exec the calling script with Homebrew's bash. (Plain 3.2 syntax up
@@ -16,10 +16,10 @@ if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
     exit 1
 fi
 
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
-export DOTFILES_DIR
+AGENT_READY_DIR="${AGENT_READY_DIR:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
+export AGENT_READY_DIR
 # shellcheck source=lib/os.sh
-source "$DOTFILES_DIR/lib/os.sh"
+source "$AGENT_READY_DIR/lib/os.sh"
 # Flutter publishes no linux-arm64 SDK: don't let mise fail on it forever.
 if [[ $OS_KIND == linux && $(uname -m) == aarch64 && ${MISE_DISABLE_TOOLS:-} != *flutter* ]]; then
     export MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}flutter"
@@ -112,9 +112,56 @@ confirm() {
 
 # ─── Config ───
 # config.env is git-ignored KEY=VALUE (bash syntax). Defaults live here so a
-# missing key never breaks a stage.
+# missing key never breaks a stage. Any key in CONFIG_KEYS may also be passed
+# as a caller environment variable (config_snapshot_env says which count);
+# install.sh saves nonempty overrides to config.env.
+CONFIG_KEYS=(
+    TARGET_USER GIT_NAME GIT_EMAIL GITHUB_TOKEN
+    PROFILE TIMEZONE LOCALE HOSTNAME_FQDN LOGIN_SHELL LOGIN_GREETING CLOUD_INIT_LOCK SWAP_SIZE_GB ZRAM
+    SSH_HARDEN SSH_DISABLE_ROOT OPEN_MOSH F2B_IGNORE_IPS
+    TAILSCALE TAILSCALE_SSH TAILSCALE_AUTHKEY TUNNEL_DEFAULT
+    FULL_CONTROL
+    DOCKER DOCKER_SUDOLESS
+    AGENT_SANDBOX GVISOR
+    ACME_EMAIL PHP WWW_DIR
+    PROJECTS_DIR FLUTTER_LINUX_DESKTOP AGENTS CLEANUP_TIMER DESKTOP_APPS
+    HERMES HERMES_DOMAIN HERMES_DASHBOARD_USER HERMES_DASHBOARD_PORT HERMES_DASHBOARD_PASSWORD HERMES_ALLOW_IPS HERMES_CLOUDFLARE_ONLY
+    TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS
+)
+declare -A CONFIG_ENV_OVERRIDES=()
+# Called once at the end of this file (it needs env_get). Only what the caller
+# typed counts as an override, never values the environment merely carries:
+# - a parent that ran load_config exported its config (AGENT_READY_CONFIG_LOADED),
+#   and a wizard-edited config.env must win over those stale exports;
+# - the login shell exports ~/.config/secrets.env and PROJECTS_DIR from
+#   ~/.config/dotfiles/projects_dir, so those would pin config.env forever.
+config_snapshot_env() {
+    [[ -n ${AGENT_READY_CONFIG_LOADED:-} ]] && return 0
+    local key value projects_dir='' exported
+    exported=" $(compgen -e | tr '\n' ' ') "
+    [[ -r $HOME/.config/dotfiles/projects_dir ]] && { IFS= read -r projects_dir <"$HOME/.config/dotfiles/projects_dir" || true; }
+    for key in "${CONFIG_KEYS[@]}"; do
+        [[ $exported == *" $key "* ]] || continue
+        value=${!key}
+        [[ -n $value ]] || continue
+        [[ $key == PROJECTS_DIR && $value == "$projects_dir" ]] && continue
+        [[ $value == "$(env_get "$HOME/.config/secrets.env" "$key")" ]] && continue
+        CONFIG_ENV_OVERRIDES[$key]=$value
+    done
+    return 0
+}
+
+config_is_secret() {
+    case $1 in
+    GITHUB_TOKEN | TAILSCALE_AUTHKEY | HERMES_DASHBOARD_PASSWORD | TELEGRAM_BOT_TOKEN) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
 load_config() {
-    local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    local file="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
+    local __k
+
     # Not `set -a`: config.env holds tokens (Telegram, Tailscale, GitHub), and
     # exporting them would hand them to every child: vendor installers, npm
     # postinstalls, sandboxed commands. Only the keys below are exported.
@@ -122,10 +169,22 @@ load_config() {
         # shellcheck disable=SC1090
         source "$file"
     fi
+    [[ -n ${CONFIG_ENV_OVERRIDES[TARGET_USER]:-} ]] && TARGET_USER=${CONFIG_ENV_OVERRIDES[TARGET_USER]}
 
     if [[ -z ${TARGET_USER:-} ]]; then
-        if is_root; then TARGET_USER="${SUDO_USER:-}"; else TARGET_USER="$(id -un)"; fi
+        if is_root; then
+            TARGET_USER="${SUDO_USER:-}"
+            if [[ -z $TARGET_USER ]]; then
+                local repo_owner
+                repo_owner="$(os_owner "$AGENT_READY_DIR")"
+                repo_owner=${repo_owner%%:*}
+                [[ -n $repo_owner && $repo_owner != root ]] && TARGET_USER=$repo_owner
+            fi
+        else
+            TARGET_USER="$(id -un)"
+        fi
     fi
+    [[ -z ${TARGET_USER:-} ]] && die "TARGET_USER must be set in config.env or environment when running directly as root"
     [[ $TARGET_USER == root ]] && die "TARGET_USER must be a regular user, not root"
 
     if [[ $TARGET_USER == "$(id -un)" ]]; then
@@ -146,6 +205,13 @@ load_config() {
         HOME=$real_home
     fi
 
+    for __k in "${!CONFIG_ENV_OVERRIDES[@]}"; do
+        printf -v "$__k" '%s' "${CONFIG_ENV_OVERRIDES[$__k]}"
+    done
+
+    # Never let secret keys stay exported in the environment for child installers.
+    export -n GITHUB_TOKEN TAILSCALE_AUTHKEY HERMES_DASHBOARD_PASSWORD TELEGRAM_BOT_TOKEN 2>/dev/null || true
+
     : "${PROFILE:=$(os_default_profile)}"
     [[ $PROFILE == workstation ]] && PROFILE=desktop # old name
     [[ $PROFILE == server || $PROFILE == desktop ]] || die "PROFILE must be server or desktop (got '$PROFILE')"
@@ -161,10 +227,10 @@ load_config() {
     : "${TAILSCALE:=false}"
     : "${TAILSCALE_SSH:=false}"
     : "${TUNNEL_DEFAULT:=auto}"
-    # FULL_CONTROL: a playground box. Passwordless sudo for TARGET_USER, and
-    # Claude + Codex in YOLO mode by default. Outside protection (SSH keys,
-    # firewall, fail2ban, dashboard auth) is unchanged.
-    # Empty = on for a server (the playground VPS), off for a desktop/laptop.
+    # FULL_CONTROL: unattended mode inside the machine. Passwordless sudo for
+    # TARGET_USER, and Claude + Codex skip permission prompts by default.
+    # Perimeter protection (SSH keys, firewall, fail2ban, dashboard auth) is unchanged.
+    # Empty = on for a server, off for a desktop/laptop.
     if [[ -z ${FULL_CONTROL:-} ]]; then
         FULL_CONTROL=false
         [[ $PROFILE == server ]] && FULL_CONTROL=true
@@ -184,6 +250,7 @@ load_config() {
     : "${PROJECTS_DIR:=$TARGET_HOME/projects}"
     : "${WWW_DIR:=/srv/www}"
     : "${AGENTS:=claude codex opencode omp grok muse herdr}"
+    : "${DESKTOP_APPS:=}"
     : "${HERMES:=true}"
     : "${HERMES_DOMAIN:=}"
     : "${HERMES_DASHBOARD_USER:=$TARGET_USER}"
@@ -203,27 +270,40 @@ load_config() {
         export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"
     fi
 
-    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE
+    # AGENT_READY_CONFIG_LOADED: child AgentReady commands mustn't take these
+    # exports for caller overrides (config_snapshot_env).
+    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE AGENT_READY_CONFIG_LOADED=1
+    # Non-secret settings follow root stages and clean user-side stage launches.
+    for __k in "${CONFIG_KEYS[@]}"; do
+        config_is_secret "$__k" || { [[ -v $__k ]] && export "$__k=${!__k}"; }
+    done
+    return 0
 }
 
 # ─── Users ───
 # run_as_user <cmd...> — run as TARGET_USER with a clean login-like env.
 # Uses runuser (util-linux) rather than sudo so it behaves the same under
-# Ubuntu 26.04's sudo-rs.
+# newer Ubuntu releases' sudo-rs.
 run_as_user() {
     if [[ $(id -un) == "$TARGET_USER" ]]; then
         "$@"
         return
     fi
-    local uid
+    local uid key
+    local -a config_env=()
+    for key in "${CONFIG_KEYS[@]}"; do
+        config_is_secret "$key" && continue
+        [[ -v $key ]] && config_env+=("$key=${!key}")
+    done
     uid="$(id -u "$TARGET_USER")"
     runuser -u "$TARGET_USER" -- env -i \
         HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
         SHELL=/bin/bash TERM="${TERM:-xterm-256color}" LANG="${LANG:-C.UTF-8}" \
         PATH="$TARGET_HOME/.local/bin:$TARGET_HOME/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         XDG_RUNTIME_DIR="/run/user/$uid" \
-        DOTFILES_DIR="$DOTFILES_DIR" DOTFILES_CONFIG="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}" \
+        AGENT_READY_DIR="$AGENT_READY_DIR" AGENT_READY_CONFIG="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}" \
         ASSUME_YES="${ASSUME_YES:-0}" RENEW="${RENEW:-0}" PROFILE="${PROFILE:-}" \
+        "${config_env[@]}" \
         "$@"
 }
 
@@ -349,7 +429,7 @@ full_control_sudo() {
     fi
     [[ $user =~ ^[a-z_][a-z0-9_-]*$ ]] || die "full_control_sudo: bad user name '$user'"
     tmp="$(mktemp)"
-    printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$user" >"$tmp"
+    printf '# Managed by ~/.dotfiles (AgentReady; FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$user" >"$tmp"
     chmod 0440 "$tmp"
     if ! visudo -cf "$tmp" >/dev/null 2>&1; then
         rm -f "$tmp"
@@ -377,3 +457,5 @@ env_get() {
     [[ -f $1 ]] || return 0
     awk -v k="$2" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2); gsub(/^["'\'']|["'\'']$/, "", v); print v; exit }' "$1"
 }
+
+config_snapshot_env

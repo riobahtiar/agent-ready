@@ -1,6 +1,6 @@
-# Tools and agents
+# AI coding agent CLIs, runtimes, and developer tools
 
-Two kinds of things get installed for you, and each is modular:
+AgentReady installs two modular groups for your developer environment:
 
 | Kind | Lives in | Add one | Retire one |
 |---|---|---|---|
@@ -14,7 +14,7 @@ drop-in files:
 
 | File | Contents |
 |---|---|
-| `00-settings.toml` | mise settings (2 parallel jobs, trusted paths, auto-install) |
+| `00-settings.toml` | mise settings (4 parallel jobs, trusted paths, auto-install) |
 | `10-runtimes.toml` | node (LTS), bun, go, python 3.13, uv, pnpm, flutter |
 | `20-languages.toml` | gopls, golangci-lint, ruff, typescript |
 | `30-agents.toml` | agent CLIs that ship as packages: codex |
@@ -23,6 +23,7 @@ drop-in files:
 | `45-cloud.toml` | aws-cli, s5cmd, rclone, wrangler, cf, opentofu |
 | `46-sandbox.toml` | srt (Anthropic sandbox-runtime), devcontainer CLI |
 | `47-delivery.toml` | hurl, oha, duckdb, usql, process-compose, air, act, biome, ty, sops, age, trivy, osv-scanner, dive, lnav |
+| `50-quality.toml` | shellcheck, shfmt, hadolint, gitleaks |
 | `60-network.toml` | cloudflared, zrok |
 
 `~/.config/mise/config.toml` is **not** managed: it's yours (and Omarchy's on
@@ -67,7 +68,8 @@ claude_configure() { …; }              # optional: settings after install
 ```
 
 Everything else reads this registry: stage 70, `update-all`, `agents`,
-`doctor`, `vps`, the herdr hooks and the shared `AGENTS.md` links.
+`doctor`, `vps`, the herdr hooks, and the shared `agents/AGENTS.global.md` links
+(for agents that declare `guide=`: `claude`, `codex`, `opencode`).
 
 ### Add an agent
 
@@ -93,20 +95,26 @@ removes it from `AGENTS`, and `git mv`s the module to `agents.d/retired/` so
 the recipe is kept. `agents restore muse` brings it back. Leftovers it points
 out: a `b-*` wrapper, or a line in `conf.d/30-agents.toml`.
 
-### Installed now
+### Included agent modules
 
 | Agent | Installed by | Sign in |
 |---|---|---|
-| Claude Code | vendor installer (self-updating) | `claude`, then `/login` |
-| Codex | mise (`npm:@openai/codex`) | `codex login --device-auth` |
-| OpenCode | vendor installer | `opencode auth login` |
-| oh-my-pi (omp) | vendor installer | `omp`, then `/login` |
-| Grok Build | vendor installer | `grok login --device-auth` |
-| Muse Code | vendor installer | `muse login` |
-| Hermes | stage 80 (server profile) | `hermes setup` |
-| Herdr | vendor installer | n/a |
+| Claude Code | [native installer](https://code.claude.com/docs/en/setup) (self-updating) | `claude`, then `/login` |
+| Codex | [official npm package](https://github.com/openai/codex) via [mise's npm backend](https://mise.jdx.dev/dev-tools/backends/npm.html) | `codex login --device-auth` |
+| OpenCode 1 | [vendor V1 installer](https://opencode.ai/docs/) (not an automatic V2 migration) | `opencode auth login` |
+| oh-my-pi (omp) | [upstream installer source](https://github.com/can1357/oh-my-pi/blob/main/scripts/install.sh) | `omp`, then `/login` |
+| Grok Build | [vendor installer](https://docs.x.ai/build/overview) | `grok login --device-auth` |
+| Muse Code | [Bash installer source](https://dev.meta.ai/install.sh) | `muse`, then `/login` ([upstream authentication](https://dev.meta.ai/docs/muse-code/auth)) |
+| Hermes | [vendor installer](https://hermes-agent.nousresearch.com/install.sh), stage 80 for the server dashboard | `hermes setup` |
+| Herdr | [vendor installer and updater](https://herdr.dev/tui/docs/install/) | n/a |
 
 `agents login` gives you a menu of these.
+
+Installation endpoints and relevant flags were checked against these current
+primary sources during release preparation. Vendor scripts and package metadata
+can change independently of this repository; review downloaded scripts before
+running them. Hermes supports the noninteractive/headless flags in its installer.
+Muse's installer is Bash even where a short upstream example uses `sh`.
 
 ## Cloud CLIs
 
@@ -136,8 +144,10 @@ finds the right `cf` command. Telemetry is off (`DO_NOT_TRACK=1`).
 
 ## Get pinged
 
-`notify "text"` sends you a Telegram message through the Hermes bot. To have
-Claude Code ping you when it needs you or finishes, add this to
+`notify "text"` sends a Telegram message using `TELEGRAM_BOT_TOKEN` from
+`~/.config/secrets.env`, then `~/.hermes/.env`, and `NOTIFY_TELEGRAM_CHAT` (same
+order), falling back to the first ID in `TELEGRAM_ALLOWED_USERS`. To have
+Claude Code ping you when it needs input or finishes a task, add this to
 `~/.claude/settings.json`:
 
 ```json

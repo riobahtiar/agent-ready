@@ -13,9 +13,9 @@
 # explains which to use when.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/net.sh"
-source "$DOTFILES_DIR/lib/tunnels.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/net.sh"
+source "$AGENT_READY_DIR/lib/tunnels.sh"
 load_config
 
 usage() {

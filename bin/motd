@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# motd — the login greeting: who logged in last, uptime, updates, resources,
+# motd — the AgentReady login greeting: who logged in last, uptime, updates, resources,
 # containers, agents, security. Shown by fish and bash on SSH logins (replaces
-# Ubuntu's and the provider's MOTD, see stages/10-system.sh). Fast by design:
-# no network, no apt, everything optional fails quietly.
+# the distribution's and provider's MOTD, see stages/10-system.sh). Fast by design:
+# no network or package-manager calls; optional facts fail quietly.
 #
 #   motd            print it
 set -uo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
+
+case ${1:-} in
+-h | --help)
+    printf 'Usage: motd\n\nPrint the AgentReady login greeting: sessions, uptime, updates and resources.\n'
+    exit 0
+    ;;
+esac
 
 [[ -t 1 ]] || C_BOLD='' C_DIM='' C_RESET='' C_YELLOW='' C_BLUE=''
 row() { printf '  %s%-11s%s %s\n' "$C_DIM" "$1" "$C_RESET" "$2"; }
@@ -22,17 +29,23 @@ asroot() { if is_root; then "$@"; else sudo -n "$@" 2>/dev/null; fi; }
 
 user=$(id -un)
 . /etc/os-release 2>/dev/null || true
-printf '\n  %s%s%s  %s·  %s  ·  kernel %s%s\n\n' "$C_BOLD$C_BLUE" "$(hostname -s)" "$C_RESET" "$C_DIM" \
+printf '\n  %s%s%s  %s·  %s  ·  kernel %s%s\n\n' "$C_BOLD$C_BLUE" "AgentReady · $(hostname -s)" "$C_RESET" "$C_DIM" \
     "${PRETTY_NAME:-$(uname -s)}" "$(uname -r | cut -d- -f1-2)" "$C_RESET"
 
-# ── Last login: the previous session (wtmpdb, Ubuntu 26.04's last/lastlog) ──
+# ── Last login: the previous session ──
+prev=''
 if have wtmpdb; then
     prev="$(wtmpdb last -n 2 "$user" 2>/dev/null | awk 'NF && $1 != "wtmpdb" && !/^$/' | sed -n 2p)"
+elif have last; then
+    prev="$(last -n 2 "$user" 2>/dev/null | awk -v user="$user" '$1 == user' | sed -n 2p)"
+fi
+if have wtmpdb || have last; then
     if [[ -n $prev ]]; then
-        # deploy  ssh  203.0.113.9  Thu Oct 29 00:55 - 01:10  (00:15)
-        from="$(awk '{print $3}' <<<"$prev")"
-        when="$(awk '{print $4, $5, $6, $7}' <<<"$prev")"
-        row "Last login" "$when from $from"
+        # deploy  pts/0  203.0.113.9  Thu Oct 29 00:55 - 01:10  (00:15)
+        # deploy  tty1                Thu Oct 29 00:55 - 01:10  (00:15)   console: no host column
+        read -r from when < <(awk '$3 ~ /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/ { print "-", $3, $4, $5, $6; next }
+            { print $3, $4, $5, $6, $7 }' <<<"$prev")
+        if [[ $from == - ]]; then row "Last login" "$when"; else row "Last login" "$when from $from"; fi
     else
         row "Last login" "first login recorded here"
     fi

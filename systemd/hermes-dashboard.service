@@ -1,7 +1,7 @@
-# Managed by ~/.dotfiles (systemd/hermes-dashboard.service) — rendered by stages/80-hermes.sh
+# Managed by ~/.dotfiles (AgentReady; systemd/hermes-dashboard.service) — rendered by stages/80-hermes.sh
 # Loopback only: nginx terminates TLS for the public hostname and proxies here.
 [Unit]
-Description=Hermes Agent web dashboard
+Description=Hermes Agent web dashboard (managed by AgentReady)
 After=network-online.target
 Wants=network-online.target
 

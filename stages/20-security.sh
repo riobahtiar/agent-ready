@@ -4,8 +4,8 @@
 # stage-profile: server
 # stage-desc: SSH hardening (key-only), ufw firewall (22/80/443), fail2ban
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
 load_config
 
 # key_login_seen — the journal (or auth.log) shows this user logging in with a
@@ -37,7 +37,7 @@ if is_true "$SSH_HARDEN" || [[ $SSH_HARDEN == force ]]; then
         # Root SSH is the way back in when the user can't sudo: keep it (key only)
         # until the user has a password.
         if [[ $root_login == no ]] && ! as_root test -f "$FULL_CONTROL_SUDOERS" &&
-            ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 == "P") ? 0 : 1}'; then
+            ! passwd -S "$TARGET_USER" 2>/dev/null | awk '{exit ($2 ~ /^P/) ? 0 : 1}'; then
             root_login=prohibit-password
             warn "$TARGET_USER has no password (no sudo) — keeping root key login; set one with: sudo passwd $TARGET_USER"
         fi
@@ -47,12 +47,12 @@ if is_true "$SSH_HARDEN" || [[ $SSH_HARDEN == force ]]; then
             warn "no key login by $TARGET_USER seen yet — keeping password login ON. Log in once with your key, then: ./install.sh security"
             stage_incomplete "SSH password login still on (no key login by $TARGET_USER seen)"
         fi
-        render "$DOTFILES_DIR/system/sshd.conf" ROOT_LOGIN="$root_login" PASSWORD_AUTH="$password_auth" |
+        render "$AGENT_READY_DIR/system/sshd.conf" ROOT_LOGIN="$root_login" PASSWORD_AUTH="$password_auth" |
             as_root tee "$conf.new" >/dev/null
         if as_root test -f "$conf"; then as_root cp "$conf" "$conf.prev"; fi
         as_root mv "$conf.new" "$conf"
         if as_root sshd -t; then
-            # Ubuntu 26.04 calls it ssh.service (socket-activated), Arch sshd.service.
+            # Debian-based systems use ssh.service; Arch uses sshd.service.
             unit=''
             for u in ssh.service sshd.service; do
                 if systemctl cat "$u" >/dev/null 2>&1; then
@@ -114,7 +114,7 @@ for ip in ${F2B_IGNORE_IPS:-}; do
     ignore+=" $ip"
 done
 desired="$(mktemp)"
-render "$DOTFILES_DIR/system/fail2ban.local" IGNORE="$ignore" >"$desired"
+render "$AGENT_READY_DIR/system/fail2ban.local" IGNORE="$ignore" >"$desired"
 if ! as_root cmp -s "$desired" /etc/fail2ban/jail.d/90-cloud.local; then
     install_file "$desired" /etc/fail2ban/jail.d/90-cloud.local
     as_root systemctl enable --now fail2ban >/dev/null 2>&1 || true

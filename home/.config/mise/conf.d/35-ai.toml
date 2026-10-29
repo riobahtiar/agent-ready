@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/35-ai.toml) — LLM tooling.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/35-ai.toml) — LLM tooling.
 # More ideas are commented out: uncomment, then mise install.
 [tools]
 "npm:ccusage" = "latest"                # token/cost report for Claude Code + Codex sessions
