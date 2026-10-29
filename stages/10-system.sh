@@ -95,6 +95,11 @@ if [[ $OS_FAMILY == debian ]]; then
             dpkg-statoverride --list "$f" >/dev/null 2>&1 || as_root dpkg-statoverride --update --add root root 0644 "$f"
         done
         as_root sed -i 's/^ENABLED=1/ENABLED=0/' /etc/default/motd-news 2>/dev/null || true
+        # motd-news.timer execs 50-motd-news directly: now 0644, so it fails (203/EXEC).
+        if ((HAS_SYSTEMD)) && [[ -e /usr/lib/systemd/system/motd-news.timer ]]; then
+            as_root systemctl mask --now motd-news.timer motd-news.service >/dev/null 2>&1 || true
+            as_root systemctl reset-failed motd-news.timer motd-news.service >/dev/null 2>&1 || true
+        fi
         # The provider's static banner (Contabo & co.), kept once as a backup.
         if as_root test -s /etc/motd && ! as_root grep -q 'Managed by ~/.dotfiles' /etc/motd; then
             as_root test -e /etc/motd.dotfiles-orig || as_root cp -p /etc/motd /etc/motd.dotfiles-orig
@@ -108,6 +113,10 @@ if [[ $OS_FAMILY == debian ]]; then
         done
         if as_root test -e /etc/motd.dotfiles-orig; then as_root mv -f /etc/motd.dotfiles-orig /etc/motd; fi
         as_root sed -i 's/^ENABLED=0/ENABLED=1/' /etc/default/motd-news 2>/dev/null || true
+        if ((HAS_SYSTEMD)) && [[ -e /usr/lib/systemd/system/motd-news.timer ]]; then
+            as_root systemctl unmask motd-news.timer motd-news.service >/dev/null 2>&1 || true
+            as_root systemctl enable --now motd-news.timer >/dev/null 2>&1 || true
+        fi
         step "LOGIN_GREETING=false — Ubuntu's MOTD restored"
     fi
 fi

@@ -15,7 +15,7 @@ stage, because config.env is an input to all of them.
 | `TIMEZONE`, `LOCALE` | Asia/Jakarta, en_US.UTF-8 | 10 |
 | `HOSTNAME_FQDN` | keep | 10 |
 | `LOGIN_SHELL` | fish | 05 |
-| `LOGIN_GREETING` | true | 10 (server): `bin/motd` on SSH login; Ubuntu's update-motd scripts (dpkg-statoverride), motd-news and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login" |
+| `LOGIN_GREETING` | true | 10 (server): `bin/motd` on SSH login; Ubuntu's update-motd scripts (dpkg-statoverride), motd-news (and its timer, masked) and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login" |
 | `CLOUD_INIT_LOCK` | true | 10 (server): `/etc/cloud/cloud-init.disabled` after first boot, so provider boot commands (Contabo re-enables root SSH login each boot) stop |
 | `SWAP_SIZE_GB`, `ZRAM` | 4, true | 10 (server) |
 | `SSH_HARDEN`, `SSH_DISABLE_ROOT`, `OPEN_MOSH` | true, true, false | 20 (server); `SSH_HARDEN=force` skips the "key login seen" check |
