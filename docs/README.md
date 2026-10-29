@@ -2,6 +2,12 @@
 
 **Your machine, ready for agentic development.** These guides cover setting up, operating, and customizing AgentReady for AI coding agents on Ubuntu servers, macOS, Linux desktops, and WSL. On an installed machine, run `vps docs` (or `vps` → Guides) to read any guide in the terminal.
 
+Browse the **[AgentReady Wiki](https://github.com/riobahtiar/agent-ready/wiki)** for
+web-friendly navigation, page contents, and the same setup and operations guides.
+The files in this directory remain the source of truth for `vps docs`; the wiki
+is a manually published copy. Update these guides first, then refresh the
+corresponding wiki pages.
+
 | # | Guide | When to read it |
 |---|---|---|
 | 01 | [Ubuntu server and first setup](01-first-setup.md) | Provisioning a fresh Ubuntu LTS server (or setting up a desktop) |
