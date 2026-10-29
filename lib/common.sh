@@ -113,7 +113,8 @@ confirm() {
 # ─── Config ───
 # config.env is git-ignored KEY=VALUE (bash syntax). Defaults live here so a
 # missing key never breaks a stage. Any key in CONFIG_KEYS may also be passed
-# as a caller environment variable; installation saves nonempty overrides.
+# as a caller environment variable (config_snapshot_env says which count);
+# install.sh saves nonempty overrides to config.env.
 CONFIG_KEYS=(
     TARGET_USER GIT_NAME GIT_EMAIL GITHUB_TOKEN
     PROFILE TIMEZONE LOCALE HOSTNAME_FQDN LOGIN_SHELL LOGIN_GREETING CLOUD_INIT_LOCK SWAP_SIZE_GB ZRAM
@@ -127,17 +128,28 @@ CONFIG_KEYS=(
     HERMES HERMES_DOMAIN HERMES_DASHBOARD_USER HERMES_DASHBOARD_PORT HERMES_DASHBOARD_PASSWORD HERMES_ALLOW_IPS HERMES_CLOUDFLARE_ONLY
     TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS
 )
-# Snapshot exported caller values once, before config defaults are loaded.
-# Repeated load_config calls must not mistake those defaults for overrides.
 declare -A CONFIG_ENV_OVERRIDES=()
-while IFS= read -r __config_env_key; do
-    for __config_key in "${CONFIG_KEYS[@]}"; do
-        if [[ $__config_env_key == "$__config_key" && -n ${!__config_key:-} ]]; then
-            CONFIG_ENV_OVERRIDES[$__config_key]=${!__config_key}
-        fi
+# Called once at the end of this file (it needs env_get). Only what the caller
+# typed counts as an override, never values the environment merely carries:
+# - a parent that ran load_config exported its config (DOTFILES_CONFIG_LOADED),
+#   and a wizard-edited config.env must win over those stale exports;
+# - the login shell exports ~/.config/secrets.env and PROJECTS_DIR from
+#   ~/.config/dotfiles/projects_dir, so those would pin config.env forever.
+config_snapshot_env() {
+    [[ -n ${DOTFILES_CONFIG_LOADED:-} ]] && return 0
+    local key value projects_dir='' exported
+    exported=" $(compgen -e | tr '\n' ' ') "
+    [[ -r $HOME/.config/dotfiles/projects_dir ]] && { IFS= read -r projects_dir <"$HOME/.config/dotfiles/projects_dir" || true; }
+    for key in "${CONFIG_KEYS[@]}"; do
+        [[ $exported == *" $key "* ]] || continue
+        value=${!key}
+        [[ -n $value ]] || continue
+        [[ $key == PROJECTS_DIR && $value == "$projects_dir" ]] && continue
+        [[ $value == "$(env_get "$HOME/.config/secrets.env" "$key")" ]] && continue
+        CONFIG_ENV_OVERRIDES[$key]=$value
     done
-done < <(compgen -e)
-unset __config_env_key __config_key
+    return 0
+}
 
 config_is_secret() {
     case $1 in
@@ -258,7 +270,9 @@ load_config() {
         export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"
     fi
 
-    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE
+    # DOTFILES_CONFIG_LOADED: child dotfiles commands mustn't take these
+    # exports for caller overrides (config_snapshot_env).
+    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE DOTFILES_CONFIG_LOADED=1
     # Non-secret settings follow root stages and clean user-side stage launches.
     for __k in "${CONFIG_KEYS[@]}"; do
         config_is_secret "$__k" || { [[ -v $__k ]] && export "$__k=${!__k}"; }
@@ -443,3 +457,5 @@ env_get() {
     [[ -f $1 ]] || return 0
     awk -v k="$2" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2); gsub(/^["'\'']|["'\'']$/, "", v); print v; exit }' "$1"
 }
+
+config_snapshot_env

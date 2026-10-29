@@ -43,8 +43,11 @@ response to any behavior that they deem inappropriate, threatening, offensive,
 or harmful.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers via GitHub. All complaints will be reviewed
-and investigated promptly and fairly.
+reported to the project maintainers. GitHub has no private messages: to report
+privately, open an issue that only asks a maintainer for a private contact
+channel, without any details of the incident. Offending content on GitHub can
+also be reported directly through GitHub's "Report content" feature. All
+complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 

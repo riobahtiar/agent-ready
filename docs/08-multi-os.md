@@ -42,7 +42,10 @@ including why a stage is skipped ("needs systemd", "server profile only", …).
 There are **13 stages total**; Debian-family systemd servers still run the same
 12 because stage 85 is desktop-only. macOS and Linux desktop stage lists add 85,
 which installs nothing when `DESKTOP_APPS` is empty. Its `stage-os: any` header
-does not imply that every app supports every platform: see the
+does not imply that every app supports every platform: an app with no native
+package on the current OS warns and is skipped (obsidian falls back to Flathub
+on Linux), and macOS casks install with `--adopt`, so an app already in
+`/Applications` is adopted. See the
 [app matrix](15-what-gets-installed.md#optional-desktop-apps-stage-85).
 
 ## macOS: Homebrew + mise

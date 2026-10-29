@@ -14,7 +14,7 @@ drop-in files:
 
 | File | Contents |
 |---|---|
-| `00-settings.toml` | mise settings (2 parallel jobs, trusted paths, auto-install) |
+| `00-settings.toml` | mise settings (4 parallel jobs, trusted paths, auto-install) |
 | `10-runtimes.toml` | node (LTS), bun, go, python 3.13, uv, pnpm, flutter |
 | `20-languages.toml` | gopls, golangci-lint, ruff, typescript |
 | `30-agents.toml` | agent CLIs that ship as packages: codex |
@@ -144,9 +144,9 @@ finds the right `cf` command. Telemetry is off (`DO_NOT_TRACK=1`).
 
 ## Get pinged
 
-`notify "text"` sends a Telegram message using `TELEGRAM_BOT_TOKEN` and
-`NOTIFY_TELEGRAM_CHAT` (from `~/.config/secrets.env`, `~/.hermes/.env`, or
-`config.env`, falling back to the first ID in `TELEGRAM_ALLOWED_USERS`). To have
+`notify "text"` sends a Telegram message using `TELEGRAM_BOT_TOKEN` from
+`~/.config/secrets.env`, then `~/.hermes/.env`, and `NOTIFY_TELEGRAM_CHAT` (same
+order), falling back to the first ID in `TELEGRAM_ALLOWED_USERS`. To have
 Claude Code ping you when it needs input or finishes a task, add this to
 `~/.claude/settings.json`:
 

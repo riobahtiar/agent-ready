@@ -9,7 +9,7 @@ One repository supports two profiles:
 
 > **Documentation:** Start with **[01 First setup](docs/01-first-setup.md)** and the **[Setup & Installation FAQ](docs/16-faq.md)**, or browse **[all guides in `docs/`](docs/README.md)** (on an installed machine: `vps docs`).
 
-> **Review before running:** Server setup defaults to `FULL_CONTROL=true`: passwordless sudo and unattended agent permissions. Set `FULL_CONTROL=false` and `AGENT_SANDBOX=true` before installation if you want password-gated sudo and agent approvals. Download and inspect scripts before running them as root; use a disposable machine first.
+> **Review before running:** Server setup defaults to `FULL_CONTROL=true` (passwordless sudo, unattended agent permissions) and `DOCKER_SUDOLESS=true` (`docker` group membership, which is root-equivalent). For password-gated sudo and agent approvals, set `FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true` at bootstrap (see [SECURITY.md](SECURITY.md)). Download and inspect scripts before running them as root; use a disposable machine first.
 
 ---
 
@@ -17,11 +17,11 @@ One repository supports two profiles:
 
 ### 1. Fresh Linux Server (`server` profile)
 
-Run `bootstrap.sh` once as `root` (or via `sudo` from a cloud default login) to create your admin user, copy SSH keys, clone this repository to `~/.dotfiles`, and generate `config.env`:
+Run `bootstrap.sh` once as `root`, or with `sudo` from a cloud default login (for example `ssh ubuntu@203.0.113.10`), to create your admin user, copy SSH keys, clone this repository to `~/.dotfiles`, and generate `config.env`:
 
 ```bash
-# Replace 'deploy' with your preferred non-root username
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | bash -s -- --user deploy
+# Replace 'deploy' with your preferred non-root username (as root, drop 'sudo')
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | sudo bash -s -- --user deploy
 
 # Reconnect in a new terminal with your SSH key (keep the root session open until verified), then run:
 ssh deploy@203.0.113.10
@@ -37,38 +37,38 @@ git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
 
 On first run in a terminal, an interactive wizard prompts for your settings (Git identity, enabled features, agents, optional domains) and writes `~/.dotfiles/config.env` (`0600`, git-ignored). Subsequent runs are state-aware and idempotent:
 
-Desktop setup also offers an explicit optional-app selection (or opt out of all).
-`DESKTOP_APPS` defaults to empty, so no desktop apps are installed unless selected.
-For example:
-
-```bash
-DESKTOP_APPS='zed ghostty obsidian' ./setup-desktop.sh desktop-apps -y
-```
-
-Or set `DESKTOP_APPS="zed ghostty obsidian"` in private `config.env`, then run
-`./setup-desktop.sh desktop-apps -y`; use `./install.sh --configure` with the
-desktop profile to change the selection interactively. Unselecting an app does
-not uninstall it. Stage 85 never runs for servers. See the
-[desktop app platform matrix](docs/15-what-gets-installed.md#optional-desktop-apps-stage-85)
-for all IDs, package sources, and limitations.
-
 ```bash
 ./install.sh --changed      # re-apply only stages whose files or config.env changed
 ./install.sh --renew        # re-apply all stages + upgrade all tools/agents + re-render sites
 ./install.sh --status       # inspect applied, changed, incomplete, or skipped stages
 ```
 
+Desktop setup also offers an explicit optional-app selection (or opt out of all).
+`DESKTOP_APPS` defaults to empty, so no desktop apps are installed unless selected.
+For example:
+
+```bash
+DESKTOP_APPS='zed ghostty obsidian' ~/.dotfiles/setup-desktop.sh desktop-apps -y
+```
+
+Or set `DESKTOP_APPS="zed ghostty obsidian"` in private `config.env`, then run
+`~/.dotfiles/setup-desktop.sh desktop-apps -y`; use `./install.sh --configure` with the
+desktop profile to change the selection interactively. Unselecting an app does
+not uninstall it. Stage 85 never runs for servers. See the
+[desktop app platform matrix](docs/15-what-gets-installed.md#optional-desktop-apps-stage-85)
+for all IDs, package sources, and limitations.
+
 ### Environment Variable & Headless Configuration
 
 Personal settings in [`config.env.example`](config.env.example) use dummy or empty values. You can configure them with `config.env`, the settings wizard, or exported environment variables:
 
 ```bash
-# Bootstrap a custom fork and user non-interactively
-TARGET_USER=deploy \
-DOTFILES_REPO=https://github.com/your-org/dotfiles-cloud.git \
-TIMEZONE=UTC \
-HERMES=false \
-bash bootstrap.sh
+# Bootstrap a custom fork and user non-interactively (plain 'sudo KEY=value' may be stripped; use 'sudo env')
+sudo env TARGET_USER=deploy \
+    DOTFILES_REPO=https://github.com/your-org/dotfiles-cloud.git \
+    TIMEZONE=UTC \
+    HERMES=false \
+    bash bootstrap.sh
 
 # Run unattended server provisioning
 GIT_NAME="Jane Doe" \
@@ -77,7 +77,7 @@ HERMES=false \
 ~/.dotfiles/setup-server.sh --all -y
 ```
 
-Start from an existing private `config.env` (created by bootstrap or `cp config.env.example config.env; chmod 600 config.env`). During installation, **nonempty exported overrides are saved to that file, including secret overrides**; they are not temporary. `--help`, `--list`, and `--status` do not save them. To clear a value, edit the file or use the wizard. Use your fork's actual URL in place of the dummy fork URL above.
+Start from an existing private `config.env` (created by bootstrap or `cp config.env.example config.env; chmod 600 config.env`); with `--all`/`-y` and no `config.env`, the installer stops before saving anything. During installation, **nonempty exported overrides are validated and then saved to that file, including secret overrides**; they are not temporary. `--help`, `--list`, and `--status` do not save them. Values inherited from a parent dotfiles process (for example after the settings wizard or from `vps`), values equal to those in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to the shell-exported `~/.config/dotfiles/projects_dir` are not treated as overrides; to change those, edit `config.env` or run `./install.sh --configure`. To clear a value, edit the file or use the wizard. Use your fork's actual URL in place of the dummy fork URL above.
 
 ---
 

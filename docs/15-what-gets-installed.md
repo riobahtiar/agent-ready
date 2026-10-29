@@ -86,7 +86,7 @@ adjusted where noted) · ➖ skipped on purpose · ⚙️ opt-in toggle in confi
 | Codex | ✅ via mise | ✅ via mise | ✅ via mise | |
 | Shared `AGENTS.md` (machine rules) linked into agents | ✅ | ✅ | ✅ | `agents/AGENTS.global.md` → `claude`, `codex`, `opencode` |
 | herdr sidebar hooks | ✅ | ✅ | ✅ | |
-| Hermes agent | ✅ when `HERMES=true`; CLI, optional dashboard and Telegram gateway | ➖ (`agents install hermes` for the CLI) | ➖ (same) | Dashboard needs `HERMES_DOMAIN`; Telegram needs bot configuration |
+| Hermes agent | ✅ when `HERMES=true` and `HERMES_DOMAIN` is set: CLI, dashboard and Telegram gateway; with `HERMES_DOMAIN` empty stage 80 skips Hermes entirely | ➖ (`agents install hermes` for the CLI) | ➖ (same) | CLI only anywhere: `agents install hermes`; Telegram needs bot configuration |
 
 ## Optional desktop apps (stage 85)
 
@@ -105,7 +105,9 @@ DESKTOP_APPS="zed ghostty obsidian"
 ```
 
 Then run `./setup-desktop.sh desktop-apps -y`. Unselecting an app does not
-uninstall it. This stage never installs anything on the server profile.
+uninstall it. This stage never installs anything on the server profile. On
+macOS, casks install with `--adopt`, so an app already in `/Applications` from
+a vendor download is adopted instead of failing.
 
 | ID / app | macOS (Homebrew) | Ubuntu / Debian | Fedora | Arch / Omarchy | WSL |
 |---|---|---|---|---|---|
@@ -175,9 +177,9 @@ documents remote/app-ID and user/system installation scopes.
 Native Windows is not an installation target for these Bash stages. Windows
 users can run the Linux desktop profile inside WSL, but that does not install
 Windows applications. No `.exe`, WinGet, Chocolatey, or unofficial Linux
-ChatGPT/Claude wrapper is invoked. “No native mapping” means setup will not guess
-a similarly named package; it warns and leaves a requested supported install
-incomplete so you can configure a documented source and retry.
+ChatGPT/Claude wrapper is invoked. “No native mapping” (and “Skip”) means setup
+will not guess a similarly named package: it warns and skips that app (the stage
+is not marked incomplete). Obsidian is the exception: it falls back to Flathub.
 
 ## Network and hosting
 
@@ -187,14 +189,14 @@ incomplete so you can configure a documented source and retry.
 | `tunnel` (Tailscale, Cloudflare, zrok, Pinggy, SSH) | ✅ | ✅ | ✅ | `nginx` provider: server only |
 | nginx + Let's Encrypt + `site` | ✅ | ➖ | ➖ | Desktops share with `tunnel` |
 | Hermes dashboard at `$HERMES_DOMAIN` | ✅ (when `HERMES=true` and `HERMES_DOMAIN` set) | ➖ | ➖ | Optional; leave `HERMES_DOMAIN` empty or `HERMES=false` to skip |
-| `notify` (Telegram) | ✅ | ✅ | ✅ | Uses `TELEGRAM_BOT_TOKEN` + `NOTIFY_TELEGRAM_CHAT` in `secrets.env` (or `TELEGRAM_ALLOWED_USERS`) |
+| `notify` (Telegram) | ✅ | ✅ | ✅ | Bot token from `~/.config/secrets.env`, else `~/.hermes/.env`; chat from `NOTIFY_TELEGRAM_CHAT`, else the first `TELEGRAM_ALLOWED_USERS` entry |
 
 ## Maintenance
 
 | Item | Ubuntu LTS Server | Omarchy / Arch (desktop) | macOS (desktop) | Notes |
 |---|---|---|---|---|
 | Weekly `cleanup --auto` timer | ✅ Sunday 04:00 | ➖ (⚙️ `CLEANUP_TIMER=true`) | ➖ (no systemd) | Run `cleanup` by hand |
-| `doctor` | ✅ full (services, exposure, certs) | ✅ (services that apply) | ✅ reduced (load, disk, tools, agents) | |
+| `doctor` | ✅ full (services; exposure and certificates are server profile only) | ✅ (services that apply) | ✅ reduced (load, disk, tools, agents) | |
 | `update-all` | apt + mise + agents + fisher + composer | pacman + mise + agents + fisher | brew + mise + agents + fisher | On Omarchy also run `omarchy update` |
 | `cleanup system` | apt autoremove/clean, journal vacuum, snaps | paccache, orphans, journal | `brew cleanup` | |
 

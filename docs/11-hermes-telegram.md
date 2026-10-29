@@ -2,10 +2,11 @@
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) (Nous Research)
 runs as an optional Telegram bot and web dashboard, served behind TLS at
-`https://$HERMES_DOMAIN` (e.g. `https://hermes.example.com`). Set
-`HERMES=false` in `config.env` to skip Hermes completely, or leave
-`HERMES_DOMAIN` empty to install the CLI without publishing a public web
-dashboard.
+`https://$HERMES_DOMAIN` (e.g. `https://hermes.example.com`). With
+`HERMES=false` or `HERMES_DOMAIN` empty, stage 80 skips Hermes entirely (no
+CLI, no Telegram credentials, no dashboard); for the CLI alone run
+`agents install hermes`. The setup below applies only when `HERMES=true` and
+`HERMES_DOMAIN` is set.
 
 ## How it's wired
 
@@ -77,8 +78,10 @@ and the stage is reported incomplete.
 
 ## notify: your own messages through the same bot
 
-`notify "text"` sends a message as your Telegram bot using `TELEGRAM_BOT_TOKEN`
-and `NOTIFY_TELEGRAM_CHAT` (from `~/.config/secrets.env`, `~/.hermes/.env`, or
-`config.env`, falling back to the first ID in `TELEGRAM_ALLOWED_USERS`). It
+`notify "text"` sends a Telegram message. The bot token is read from
+`~/.config/secrets.env` first, then `~/.hermes/.env` (so a dedicated notify bot
+wins and the Hermes bot is the fallback). The chat id is `NOTIFY_TELEGRAM_CHAT`
+(same file order), else the first ID in `TELEGRAM_ALLOWED_USERS`. `config.env`
+is never read. It
 doesn't interfere with the gateway, which only reads incoming updates. Use it
 from hooks, cron, or after long builds ([06](06-tools-and-agents.md#get-pinged)).

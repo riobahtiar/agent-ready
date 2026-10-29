@@ -8,19 +8,35 @@ stage, editing `config.env` marks all stages as changed: `./install.sh --changed
 re-runs all applicable stages, whereas `./install.sh <stage>` (e.g.
 `./install.sh hermes`) re-runs just one stage.
 
-Any `config.env` key can also be passed as an exported environment variable
-override (for example, `HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`).
-On installation runs, explicit nonempty exported configuration overrides are
-**saved to the private `config.env` before sudo escalation**, so later runs retain
-them and `--changed` detects updated settings. Empty exported values do not
-override configuration. `--status`, `--list`, and `--help` do not save overrides;
-`--configure` saves them only if you proceed into installation after the wizard.
-Machine commands use environment overrides for that invocation; bootstrap seeds
-the new configuration.
+Any `config.env` key can also be passed as a nonempty exported environment
+variable override (for example, `HERMES=false TIMEZONE=UTC ./install.sh --all -y`).
+Overrides need an existing `config.env` (from bootstrap, the wizard, or
+`cp config.env.example config.env`); with `--all`/`-y` and no `config.env`,
+`install.sh` stops before saving anything. On installation runs, overrides are
+**saved to the private `config.env` after `load_config` validates them and before
+sudo escalation** (secrets are written by the owning user, never passed on a
+command line), so later runs retain them and `--changed` detects updated
+settings. Empty values do not override. `--status`, `--list`, and `--help` do not
+save overrides; `--configure` saves them only if you proceed into installation
+after the wizard. Machine commands use overrides for that invocation; bootstrap
+seeds every nonempty key into a new `config.env`.
+
+Values that are not your explicit choice are **not** treated as overrides:
+
+- anything inherited from a parent dotfiles process (`load_config` exports
+  `DOTFILES_CONFIG_LOADED=1`), so `install.sh` relaunched after the wizard or from
+  `vps` reads `config.env` fresh;
+- a key whose environment value equals its value in `~/.config/secrets.env`
+  (your login shell exports that file);
+- `PROJECTS_DIR` when it equals what the shell exports from
+  `~/.config/dotfiles/projects_dir`.
+
+To change such a value, edit `config.env` or run `./install.sh --configure`.
+
 Secret keys (`GITHUB_TOKEN`, `TAILSCALE_AUTHKEY`, `HERMES_DASHBOARD_PASSWORD`,
-`TELEGRAM_BOT_TOKEN`) are unexported by `load_config` so child processes do not
-inherit them under those names. Tool stages explicitly provide `MISE_GITHUB_TOKEN`
-to mise when needed for authenticated GitHub downloads.
+`TELEGRAM_BOT_TOKEN`) are unexported by `load_config` under those names. However,
+`load_config` exports `GITHUB_TOKEN` as `MISE_GITHUB_TOKEN` to every stage and
+machine command, so all of their child processes can read it.
 
 | Key | Default | Used by |
 |---|---|---|
@@ -31,16 +47,16 @@ to mise when needed for authenticated GitHub downloads.
 | `TIMEZONE`, `LOCALE` | UTC, en_US.UTF-8 | 10 |
 | `HOSTNAME_FQDN` | keep | 10 |
 | `LOGIN_SHELL` | fish | 05 |
-| `LOGIN_GREETING` | true | 10 (server): `bin/motd` on SSH login; Ubuntu's update-motd scripts (dpkg-statoverride), motd-news (and its timer, masked) and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login" |
+| `LOGIN_GREETING` | true | 10 (server): only toggles Ubuntu's own login messages — update-motd scripts (dpkg-statoverride), motd-news (and its timer, masked) and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login". `bin/motd` runs on every SSH login shell regardless, unless `CLOUD_GREETING=off` |
 | `CLOUD_INIT_LOCK` | true | 10 (server): `/etc/cloud/cloud-init.disabled` after first boot, so provider boot commands stop |
 | `SWAP_SIZE_GB`, `ZRAM` | 4, true | 10 (server) |
 | `SSH_HARDEN`, `SSH_DISABLE_ROOT`, `OPEN_MOSH` | true, true, false | 20 (server); `SSH_HARDEN=force` skips the "key login seen" check |
 | `F2B_IGNORE_IPS` | — | 20: never banned (plus loopback, Tailscale, the installing IP) |
 | `TAILSCALE`, `TAILSCALE_SSH`, `TAILSCALE_AUTHKEY` | false, false, — | 75 |
 | `TUNNEL_DEFAULT` | auto | `tunnel` |
-| `FULL_CONTROL` | true on server, false on desktop | 05: passwordless sudo (visudo-checked `/etc/sudoers.d`), Claude `bypassPermissions` + Codex `never`/`danger-full-access` defaults, `b-claude`/`b-codex` skip the prompt; turns `DOCKER_SUDOLESS` on and `AGENT_SANDBOX` off by default |
+| `FULL_CONTROL` | true on server, false on desktop | 05: passwordless sudo (visudo-checked `/etc/sudoers.d`), Claude `bypassPermissions` + Codex `never`/`danger-full-access` defaults, `b-claude`/`b-codex` skip the prompt; turns `AGENT_SANDBOX` off by default. Turning it off later does not revert docker membership or agent bypass settings already written ([16](16-faq.md)) |
 | `DOCKER` | true | 30 |
-| `DOCKER_SUDOLESS` | true on server, false on desktop | 30: docker group |
+| `DOCKER_SUDOLESS` | true on server (regardless of `FULL_CONTROL`), false on desktop | 30: docker group (root-equivalent) |
 | `GVISOR` | false | 30: runsc runtime |
 | `AGENT_SANDBOX` | true (false with `FULL_CONTROL`) | 70: Claude Code `sandbox.enabled` (only if unset) |
 | `ACME_EMAIL` | — | 40, 80, `site add` |
@@ -50,7 +66,7 @@ to mise when needed for authenticated GitHub downloads.
 | `AGENTS` | claude codex opencode omp grok muse herdr | 70 (module names in agents.d/) |
 | `DESKTOP_APPS` | empty (install none) | 85, desktop only: whitespace-separated IDs `orbstack tablepro zed ghostty tailscale chatgpt claude helium cloudflare-warp obsidian mole`; select in `./install.sh --configure` or edit private `config.env`; unselecting does not uninstall |
 | `CLEANUP_TIMER` | true on server, false on desktop | 90 |
-| `HERMES`, `HERMES_DOMAIN`, `HERMES_DASHBOARD_USER`, `HERMES_DASHBOARD_PORT` | true, —, `$TARGET_USER`, 9119 | 80 (leaving `HERMES_DOMAIN` empty or `HERMES=false` skips publishing the web dashboard) |
+| `HERMES`, `HERMES_DOMAIN`, `HERMES_DASHBOARD_USER`, `HERMES_DASHBOARD_PORT` | true, —, `$TARGET_USER`, 9119 | 80; with `HERMES_DOMAIN` empty stage 80 skips Hermes entirely (no CLI, no Telegram credentials, no dashboard) — CLI only: `agents install hermes`; `HERMES=false` also skips it |
 | `HERMES_DASHBOARD_PASSWORD` | prompted | 80 (only the scrypt hash is stored) |
 | `HERMES_ALLOW_IPS` | — | 80: nginx allowlist |
 | `HERMES_CLOUDFLARE_ONLY` | false | 80: accept only Cloudflare's IP ranges (use with Cloudflare Access) |

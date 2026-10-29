@@ -62,7 +62,12 @@ fi
 log "bash hooks (agents and scripts run bash even though fish is the login shell)"
 add_line() {
     local file=$1 line=$2
-    [[ -L $file ]] && return 0
+    if [[ -L $file ]]; then
+        # Managed elsewhere (another dotfiles repo): don't turn the link into a file.
+        grep -qxF "$line" "$file" 2>/dev/null ||
+            warn "$file is a symlink — add this line to it yourself: $line"
+        return 0
+    fi
     touch "$file"
     grep -qxF "$line" "$file" || printf '\n# ~/.dotfiles\n%s\n' "$line" >>"$file"
 }

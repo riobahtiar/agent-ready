@@ -44,7 +44,11 @@ _desktop_app_brew() {
     fi
     # Brew enforces the package's current macOS/CPU requirements. Do not launch
     # apps or invoke Mole: package installation is the only requested action.
-    if HOMEBREW_NO_AUTO_UPDATE=1 _pkg_brew install "--$kind" "$token" &&
+    # --adopt takes over an app a vendor download already put in /Applications;
+    # without it the cask install fails on every run.
+    local adopt=()
+    [[ $kind == cask ]] && adopt=(--adopt)
+    if HOMEBREW_NO_AUTO_UPDATE=1 _pkg_brew install "--$kind" ${adopt[@]+"${adopt[@]}"} "$token" &&
         _pkg_brew list "--$kind" "$token" >/dev/null 2>&1; then
         ok "$id: installed (Homebrew $kind $token)"
     else
@@ -163,6 +167,10 @@ _desktop_app_linux() {
         ;;
     esac
     package=$(_desktop_app_native_package "$id")
+    if [[ -z $package && $id != obsidian ]]; then
+        warn "$id: no native package for $OS_PRETTY — skipped"
+        return 0
+    fi
     if [[ -n $package ]] && pkg_installed "$package"; then
         step "$id: already installed (native package $package)"
         return 0

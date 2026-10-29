@@ -109,17 +109,18 @@ if ((CONFIGURE)) || { asking && config_looks_unset; }; then
 fi
 [[ -f ${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env} ]] ||
     die "Missing config.env — run: ./install.sh --configure (or cp config.env.example config.env)"
-# Persist explicit environment overrides so --changed hashes the settings actually
-# used. This also carries secrets without exposing them on sudo/env command lines.
+load_config
+id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
+# Save caller overrides (config_snapshot_env) once load_config has accepted
+# them, so --changed hashes the settings actually used and root reads them
+# after sudo. Secrets travel this way too, never on a sudo/env command line.
 CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
 for var in "${!CONFIG_ENV_OVERRIDES[@]}"; do
-    config_set_owned "$CONFIG_FILE" "$var" "${CONFIG_ENV_OVERRIDES[$var]}"
+    config_set_owned "$CONFIG_FILE" "$var" "${!var}"
 done
-load_config
 
 # The profile is always written down once decided: auto-detection can change
 # under it (an `ssh -X` session, a package that installs a desktop session).
-CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
 if [[ -n ${PROFILE_OVERRIDE:-} && $PROFILE_OVERRIDE != "$PROFILE" ]] && [[ -n $(config_value PROFILE) ]] && setup_done; then
     # Never auto-answered by -y: switching skips (or adds) whole server stages.
     has_tty || die "this machine is set up as '$PROFILE' — switching to '$PROFILE_OVERRIDE' needs you at a terminal"
@@ -226,7 +227,6 @@ if [[ $OS_KIND == linux ]] && ! is_root; then
     exec sudo -- env "${passthrough[@]}" "$SELF" "${orig_args[@]}"
 fi
 [[ $OS_KIND == macos ]] && is_root && die "on macOS run install.sh as yourself, not with sudo (Homebrew refuses root)"
-id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
 
 [[ $MODE == renew ]] && export RENEW=1
 export INSTALL_MODE=$MODE

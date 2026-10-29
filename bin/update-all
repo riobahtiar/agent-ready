@@ -7,7 +7,7 @@
 #   update-all claude codex  only these agents
 #   update-all tools shell   any mix of the groups below
 #   update-all --check       what's outdated, without changing anything
-#   update-all --quick       everything except system packages (no sudo for those)
+#   update-all --quick       everything except system packages; never uses sudo
 #   update-all -n            print the plan only
 #
 # Groups: system (system packages) · tools (mise: runtimes + CLIs) · agents · shell (fish
@@ -204,6 +204,8 @@ if want php && have composer; then
     composer_bin="$(command -v composer)"
     if [[ -w $composer_bin ]]; then
         task "composer" "$composer_bin" self-update --quiet
+    elif ((QUICK)); then
+        step "composer is root-owned: self-update skipped in --quick (no sudo)"
     else
         task "composer" sudo env COMPOSER_ALLOW_SUPERUSER=1 "$composer_bin" self-update --quiet
     fi

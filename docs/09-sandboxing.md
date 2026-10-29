@@ -95,7 +95,9 @@ for Claude Code's built-in `sandbox.enabled` toggle.
 
 Enabled by default on desktop (`AGENT_SANDBOX=true` → `sandbox.enabled`), and off
 by default when `FULL_CONTROL=true` (override with `AGENT_SANDBOX=true` in
-`config.env`). Either way, Stage 70 configures `permissions.deny` Read rules for
+`config.env`). Stage 70 sets `sandbox.enabled: true` only when the key is absent;
+an explicit `false` you put in `~/.claude/settings.json` is preserved. Either
+way, Stage 70 configures `permissions.deny` Read rules for
 sensitive credential files (since Claude's built-in sandbox doesn't read
 `~/.srt-settings.json`). Two things to know:
 - With `allowUnsandboxedCommands` (Claude's default), Claude may ask to run a

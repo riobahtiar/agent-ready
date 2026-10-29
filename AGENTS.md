@@ -17,7 +17,7 @@ with Homebrew + mise, Omarchy/Arch, Ubuntu/Fedora desktop, WSL). It lives at `~/
 - `setup-server.sh` / `setup-desktop.sh` pin `PROFILE` and exec `install.sh`.
 - `install.sh` runs `stages/NN-name.sh` in order, filtered by the headers
   `# stage-user: root|user`, `# stage-os: <spec>`, `# stage-profile:
-  all|server|desktop`, optional `# stage-inputs:` and `# stage-desc:`
+  all|server|desktop`, `# stage-desc:` (required), optional `# stage-inputs:`
   (`lib/stages.sh`). It records each successful stage in `.state/stages/`
   (digest of its inputs) for `--changed`, `--status` and the re-run guard.
   User stages run as `TARGET_USER` through `run_as_user`. On macOS everything

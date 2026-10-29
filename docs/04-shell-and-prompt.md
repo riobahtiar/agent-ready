@@ -59,8 +59,9 @@ set -g CLOUD_PROMPT_RIGHT status duration worktree bun go   # in prompt.fish
 
 ### Greeting and title
 
-- On **SSH login** you get the greeting from `bin/motd` instead of Ubuntu's
-  MOTD and the provider's banner (stage 10 turns those off, `LOGIN_GREETING`):
+- On every **SSH login** shell you get the greeting from `bin/motd` unless
+  `CLOUD_GREETING=off` (`LOGIN_GREETING` only toggles Ubuntu's own MOTD and the
+  provider's banner, which stage 10 turns off):
   previous login (time, IP), uptime and boot time, pending/security updates and
   the last apt run, load, memory and swap, disk, Docker containers, running
   agents, fail2ban bans and the firewall, plus warnings for a pending reboot,

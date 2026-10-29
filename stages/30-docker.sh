@@ -102,10 +102,12 @@ if ! as_root cmp -s "$desired" "$daemon_json" 2>/dev/null; then
     if dockerd --validate --config-file "$desired" >/dev/null 2>&1; then
         [[ -f $daemon_json ]] && as_root cp "$daemon_json" "$daemon_json.bak"
         install_file "$desired" "$daemon_json"
-        # A restart can disrupt running containers. New bridge-network defaults
-        # do not migrate existing networks or override explicit host bindings.
+        # The first restart stops running containers (live-restore isn't on
+        # yet), and containers on the default bridge with unqualified -p binds
+        # come back bound to 127.0.0.1. User-defined networks created earlier
+        # keep their old binding. Never do that to a busy box without asking.
         running="$( (as_root docker ps -q 2>/dev/null || true) | wc -l | xargs)" # daemon may be down
-        if ((running > 0)) && ! { has_tty && ASSUME_YES=0 confirm "  Restart Docker now? $running container(s) may stop; existing networks/bindings are not migrated [y/N] "; }; then
+        if ((running > 0)) && ! { has_tty && ASSUME_YES=0 confirm "  Restart Docker now? $running running container(s) will stop; those on the default bridge with plain -p ports come back bound to 127.0.0.1 (user-defined networks keep their old binding) [y/N] "; }; then
             stage_incomplete "daemon.json installed, but Docker NOT restarted ($running containers running) — restart it when convenient: sudo systemctl restart docker"
         elif as_root systemctl restart docker; then
             ok "installed (log rotation, 127.0.0.1 default bind, live-restore$(have runsc && echo ', runsc runtime'))"

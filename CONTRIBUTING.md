@@ -11,7 +11,7 @@ Contributions that improve portability, reliability, security, or documentation 
 5. **No secrets or personal data.** Never include real domains, usernames, email addresses, IP addresses, or tokens in scripts, configs, comments, or commit messages. Use environment variables / `config.env` and RFC-reserved dummy values (`example.com`, `203.0.113.0/24`, `deploy`, `you@example.com`).
 6. **Docs move with behavior.** Updating a stage, command, config key, or module requires updating the corresponding guide(s) in `docs/` (including `docs/08-multi-os.md`, `docs/10-reference.md`, `docs/15-what-gets-installed.md`, or `docs/16-faq.md` when applicable).
 
-For deep implementation details, platform quirks (macOS Bash 3.2 bootstrap, Ubuntu `sudo-rs` / AppArmor `bwrap`, Arch `pacman -Syu`), and root/user security boundaries, read **[AGENTS.md](AGENTS.md)** and **[docs/10-reference.md](docs/10-reference.md)**.
+For deep implementation details, platform quirks (macOS Bash 3.2 bootstrap, Ubuntu `sudo-rs`, Arch `pacman -Syu`), and root/user security boundaries, read **[AGENTS.md](AGENTS.md)** and **[docs/10-reference.md](docs/10-reference.md)**. The Ubuntu AppArmor / `bwrap` user-namespace quirk is covered in **[docs/09-sandboxing.md](docs/09-sandboxing.md)**.
 
 ## Common Additions
 

@@ -21,8 +21,9 @@ doctor --brief    # services, resources and exposure only
 ```
 
 It checks load, memory, swap, disk, reboot-required, services (by profile),
-ufw, **anything listening on a public address**, certificate expiry, Hermes
-auth, toolchain versions, agents and disk hogs. It exits non-zero on problems.
+ufw, Hermes auth, toolchain versions, agents and disk hogs, plus (server
+profile) **anything listening on a public address** and certificate expiry.
+It exits non-zero on problems.
 
 ## update-all — upgrade agents and tools
 
@@ -33,7 +34,7 @@ update-all agents         # every installed agent CLI
 update-all claude codex   # just these
 update-all tools shell    # groups: system tools agents shell php extras dotfiles
 update-all --check        # what's outdated; changes nothing (exits 1 if a check itself fails)
-update-all --quick        # skip OS packages (apt/pacman/dnf/brew; no sudo needed)
+update-all --quick        # skip system packages (apt/pacman/dnf/brew); never uses sudo (root-owned Composer self-update skipped)
 update-all -n             # print the plan
 ```
 
@@ -125,9 +126,11 @@ make test; notify "tests exited $?"
 journalctl -u app -n 20 | notify
 ```
 
-Uses `TELEGRAM_BOT_TOKEN` and `NOTIFY_TELEGRAM_CHAT` (from `~/.config/secrets.env`,
-`~/.hermes/.env`, or `config.env`), falling back to the first user ID in
-`TELEGRAM_ALLOWED_USERS`. The token is passed via stdin and never appears on a command line.
+Token: `TELEGRAM_BOT_TOKEN` from `~/.config/secrets.env`, then `~/.hermes/.env`
+(a dedicated notify bot in secrets.env wins over the Hermes bot). Chat:
+`NOTIFY_TELEGRAM_CHAT` (same file order), else the first ID in
+`TELEGRAM_ALLOWED_USERS`. `config.env` is never read. The token is passed via
+stdin and never appears on a command line.
 
 ## hermes-up — Telegram gateway + dashboard
 
@@ -142,9 +145,10 @@ hermes-up status
 motd               # print the server/system health summary any time
 ```
 
-Runs automatically on interactive SSH login when `LOGIN_GREETING=true` (showing
+Runs automatically on every SSH login shell unless `CLOUD_GREETING=off` (showing
 last login, uptime, pending updates, load, memory/swap, disk, Docker containers,
-running agents, fail2ban, and ufw status).
+running agents, fail2ban, and ufw status). `LOGIN_GREETING` only toggles
+Ubuntu's own login messages.
 
 ## install.sh, setup-server.sh, setup-desktop.sh
 
@@ -152,7 +156,7 @@ running agents, fail2ban, and ufw status).
 ./setup-server.sh            # server/headless: everything incl. firewall, nginx, Hermes
 ./setup-desktop.sh           # laptop/desktop/WSL: no nginx/firewall/server tuning
 ./install.sh                 # menu (first run: settings wizard)
-./install.sh -c              # (--changed) only stages whose files or config changed (or never ran / failed)
+./install.sh --changed       # only stages whose files or config changed (or never ran / failed)
 ./install.sh --renew         # everything + upgrade all tools/agents + re-render sites
 ./install.sh -a              # (--all) re-apply every stage
 ./install.sh docker web      # specific stages (by number, prefix, or short name)
@@ -164,10 +168,13 @@ running agents, fail2ban, and ufw status).
 
 All accept `-y` / `--yes` for non-interactive runs (except switching an existing
 machine's profile, which always asks at a terminal). Any `config.env` key can
-also be passed as an environment variable override (e.g.
-`HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`). Installation runs save
-explicit nonempty exported overrides to private `config.env`; read-only
-`--status`/`--list`/`--help` do not. See [10 Reference](10-reference.md#configenv).
+also be passed as an exported environment variable override (e.g.
+`HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`); this needs an existing
+`config.env`. Installation runs save validated nonempty overrides to private
+`config.env`; read-only `--status`/`--list`/`--help` do not. Values inherited
+from a parent dotfiles process, matching `~/.config/secrets.env`, or the
+shell's exported `PROJECTS_DIR` are not overrides: edit `config.env` or run
+`./install.sh --configure`. See [10 Reference](10-reference.md#configenv).
 Modes don't combine: pass stage names *or* one of `--all`/`--changed`/`--renew`.
 A stage that finishes
 with pending manual prerequisites (no SSH key login seen yet, a vendor tool that

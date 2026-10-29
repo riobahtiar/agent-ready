@@ -28,7 +28,7 @@ Most management commands open menus when run without arguments in a terminal. Pa
 | Command | Purpose |
 |---|---|
 | `vps` | Unified interactive dashboard for health, updates, sites, tunnels, agents, logs, and guides |
-| `doctor` | Health check: services, memory, disk, public port exposure, TLS certificates, and agents |
+| `doctor` | Health check: services, memory, disk, agents; public port exposure and TLS certificates (`server` profile) |
 | `update-all` | Upgrade OS packages, `mise` runtimes/CLIs, agent CLIs, and Fisher plugins |
 | `cleanup` | Reclaim disk & memory: caches, Docker artifacts, merged/stale git worktrees, orphaned processes |
 | `site` | Manage `nginx` virtual hosts and Let's Encrypt TLS certificates (`server` profile) |

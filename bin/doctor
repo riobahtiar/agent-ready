@@ -2,6 +2,7 @@
 # doctor — one-screen health check for this machine.
 #   doctor           full report
 #   doctor --brief   services, resources and exposure only (used at the end of install.sh)
+# Exposure (listening ports) and Certificates run on the server profile only.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 source "$DOTFILES_DIR/lib/agents.sh"
@@ -10,7 +11,7 @@ BRIEF=0
 for arg in "$@"; do
     case $arg in
     -h | --help)
-        printf 'Usage: doctor [--brief]\n\nReport machine health; --brief shows services, resources and exposure only.\n'
+        printf 'Usage: doctor [--brief]\n\nReport machine health; --brief shows services, resources and exposure only.\nExposure and Certificates sections: server profile only.\n'
         exit 0
         ;;
     --brief) BRIEF=1 ;;
@@ -54,13 +55,18 @@ if ((HAS_SYSTEMD)); then
     section "Services"
     units=()
     if [[ $PROFILE == server ]]; then
+        # Socket-activated on Ubuntu 24.04+, plain ssh.service elsewhere: check the live one.
+        ssh_pick=''
         for ssh_unit in ssh.socket ssh.service sshd.service; do
-            if systemctl cat "$ssh_unit" >/dev/null 2>&1; then
-                units+=("$ssh_unit")
+            if systemctl is-active --quiet "$ssh_unit" 2>/dev/null; then
+                ssh_pick=$ssh_unit
                 break
             fi
+            [[ -z ${ssh_first:-} ]] && systemctl cat "$ssh_unit" >/dev/null 2>&1 && ssh_first=$ssh_unit
         done
-        have nginx && units+=(nginx)
+        ssh_pick=${ssh_pick:-${ssh_first:-}}
+        [[ -n $ssh_pick ]] && units+=("$ssh_pick")
+        systemctl cat nginx.service >/dev/null 2>&1 && units+=(nginx)
         units+=(fail2ban)
         [[ $OS_FAMILY == debian ]] && units+=(unattended-upgrades)
     fi
@@ -88,7 +94,7 @@ if ((HAS_SYSTEMD)); then
     fi
 
     if [[ $PROFILE == server ]]; then
-        section "Exposure (listening on non-loopback addresses)"
+        section "Exposure (server profile: listening on non-loopback addresses)"
         while read -r addr proc; do
             port=${addr##*:}
             case $port in
@@ -112,7 +118,7 @@ fi
 
 if ((! BRIEF)); then
     if [[ $PROFILE == server ]]; then
-        section "Certificates"
+        section "Certificates (server profile)"
         if certs="$(nsudo certbot certificates 2>/dev/null)" && [[ -n $certs ]]; then
             awk '/Certificate Name:/ {n=$3} /Expiry Date:/ {sub(/.*Expiry Date: /, ""); print n " — " $0}' <<<"$certs" | while read -r line; do
                 [[ $line == *INVALID* || $line == *EXPIRED* ]] && bad "$line" || good "$line"

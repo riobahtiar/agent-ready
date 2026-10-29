@@ -41,10 +41,11 @@ elif have last; then
 fi
 if have wtmpdb || have last; then
     if [[ -n $prev ]]; then
-        # deploy  ssh  203.0.113.9  Thu Oct 29 00:55 - 01:10  (00:15)
-        from="$(awk '{print $3}' <<<"$prev")"
-        when="$(awk '{print $4, $5, $6, $7}' <<<"$prev")"
-        row "Last login" "$when from $from"
+        # deploy  pts/0  203.0.113.9  Thu Oct 29 00:55 - 01:10  (00:15)
+        # deploy  tty1                Thu Oct 29 00:55 - 01:10  (00:15)   console: no host column
+        read -r from when < <(awk '$3 ~ /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/ { print "-", $3, $4, $5, $6; next }
+            { print $3, $4, $5, $6, $7 }' <<<"$prev")
+        if [[ $from == - ]]; then row "Last login" "$when"; else row "Last login" "$when from $from"; fi
     else
         row "Last login" "first login recorded here"
     fi

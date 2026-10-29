@@ -30,8 +30,8 @@ claude_jail() {
 
 claude_install() { _vendor_script https://claude.ai/install.sh; }
 claude_update() { claude update; }
-# Defaults merged into ~/.claude/settings.json; `//=` never overrides a value
-# you set yourself.
+# Defaults merged into ~/.claude/settings.json; set only when absent, never
+# overriding a value you set yourself (jq `//=` would clobber an explicit false).
 #   cleanupPeriodDays  prune old transcripts (complements `cleanup agents`)
 #   sandbox.enabled    run Bash inside bubblewrap/Seatbelt (AGENT_SANDBOX, stage 65)
 #   permissions.deny   Read rules for credential files (added, never removed);
@@ -44,7 +44,7 @@ claude_configure() {
         # Permission bypass is separate from sandboxing and credential rules.
         filter+=' | .permissions.defaultMode //= "bypassPermissions"'
     fi
-    is_true "${AGENT_SANDBOX:-true}" && filter+=' | .sandbox.enabled //= true'
+    is_true "${AGENT_SANDBOX:-true}" && filter+=' | (if .sandbox.enabled == null then .sandbox = ((.sandbox // {}) + {enabled: true}) else . end)'
     mkdir -p "$HOME/.claude"
     # Edit the real file if settings.json is a link (managed elsewhere).
     [[ -L $settings ]] && settings="$(readlink -f "$settings")"

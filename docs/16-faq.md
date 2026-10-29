@@ -18,7 +18,7 @@ The `server` profile is **tested on the latest Ubuntu LTS**. Debian-family serve
 ### Do I need a custom domain, Hermes, or a Telegram bot to set up a server?
 
 **No.** Everything domain- or bot-related is optional:
-- Leave `HERMES_DOMAIN=` empty in `config.env` (the default) or set `HERMES=false` to skip publishing the Hermes web dashboard and Telegram bot.
+- Leave `HERMES_DOMAIN=` empty in `config.env` (the default) or set `HERMES=false`: stage 80 then skips Hermes entirely (no CLI, no Telegram credentials, no dashboard). For the CLI alone, run `agents install hermes`.
 - `nginx` and Certbot sit idle until you explicitly add a domain with `site add app.example.com --proxy 3000`.
 - For temporary previews without a domain, use `tunnel <port>` (Tailscale, SSH port-forwarding, Cloudflare Quick Tunnel, Pinggy, or zrok).
 
@@ -27,16 +27,18 @@ The `server` profile is **tested on the latest Ubuntu LTS**. Debian-family serve
 You have three ways to configure the installer (all personal defaults are empty or dummy placeholders out of the box):
 1. **Interactive wizard (default on first terminal run):** Run `./setup-server.sh`, `./setup-desktop.sh`, or `./install.sh --configure`.
 2. **Config file:** Copy `cp config.env.example config.env` (`chmod 600 config.env`) and edit values before running `--all -y`.
-3. **Environment variable overrides (ideal for automation, cloud-init, and forks):** Nonempty exported `config.env` keys take precedence over the file. The installer **saves those overrides to the existing private `config.env`, including secret values**, so future runs and `--changed` use the same settings. Bootstrap seeds a new config; help/list/status are read-only. To clear a value, edit `config.env` or use the wizard:
+3. **Environment variable overrides (ideal for automation, cloud-init, and forks):** Nonempty exported `config.env` keys take precedence over the file. After validation (and before sudo escalation) the installer **saves those overrides to the existing private `config.env`, including secret values**, so future runs and `--changed` use the same settings. Overrides need an existing `config.env` (bootstrap, the wizard, or `cp config.env.example config.env`); with `--all`/`-y` and no `config.env`, `install.sh` stops before saving anything. Bootstrap seeds a new config; help/list/status are read-only. Values inherited from a parent dotfiles process, values equal to the ones in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to `~/.config/dotfiles/projects_dir` are not treated as overrides ([details](10-reference.md#configenv)). To change or clear a value, edit `config.env` or use the wizard:
    ```bash
-   # Bootstrap a custom fork and user non-interactively
-   TARGET_USER=deploy DOTFILES_REPO=https://github.com/you/dotfiles-cloud.git \
-       HERMES=false TIMEZONE=UTC bash bootstrap.sh
+   # Bootstrap a custom fork and user non-interactively (as a non-root cloud user, e.g. ubuntu)
+   curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh \
+       | sudo env DOTFILES_REPO=https://github.com/you/dotfiles-cloud.git \
+           HERMES=false TIMEZONE=UTC bash -s -- --user deploy
 
    # Run server setup non-interactively with overrides
    GIT_NAME="Jane Doe" GIT_EMAIL="jane@example.com" HERMES=false \
        ~/.dotfiles/setup-server.sh --all -y
    ```
+   Use `sudo env KEY=value bash …`; plain `sudo KEY=value` may be stripped by sudo's environment policy.
 
 ### Why does setup recommend a `GITHUB_TOKEN`, and what permissions does it need?
 
@@ -60,13 +62,20 @@ Stage 20 (`stages/20-security.sh`) has built-in lockout guards before disabling 
 `FULL_CONTROL` controls whether your user and coding agents operate unattended inside the machine:
 - **When `FULL_CONTROL=true` (default on `server`, off on `desktop`):**
   - Grants `TARGET_USER` passwordless `sudo` (`/etc/sudoers.d/90-dotfiles-full-control`, validated via `visudo`).
-  - Adds `TARGET_USER` to the `docker` group (`DOCKER_SUDOLESS=true`).
+  - `DOCKER_SUDOLESS` defaults to `true` on the server profile **regardless of `FULL_CONTROL`**, adding `TARGET_USER` to the root-equivalent `docker` group.
   - Configures Claude Code (`bypassPermissions`) and Codex (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`) not to pause on permission prompts, and defaults `AGENT_SANDBOX` to `false` (credential read-deny rules in `~/.claude/settings.json` remain active).
   - SSH, firewall, fail2ban, dashboard auth, and Docker loopback **defaults** are configured independently of this toggle. These are not guarantees against an agent with root access, explicit public binds, or existing Docker networks.
 - **When `FULL_CONTROL=false` (default on `desktop`):**
   - `sudo` requires your password, agents prompt before privileged actions, and `AGENT_SANDBOX` defaults to `true`.
 
-If you prefer interactive `sudo` passwords and agent sandboxing on a server, set `FULL_CONTROL=false` (and `AGENT_SANDBOX=true`) in `config.env` or untick **Unattended mode** in `./install.sh --configure`.
+For password-gated `sudo` and prompting agents on a server, set `FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true`, ideally at bootstrap (it seeds every nonempty key from its environment into the new `config.env`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh \
+    | sudo env FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true bash -s -- --user deploy
+```
+
+Switching off later: set a password first (`sudo passwd <user>`), because stage 05 removes the passwordless rule. Nothing reverts existing `docker` group membership (`sudo gpasswd -d <user> docker`) or agent bypass settings already written — remove Claude's `permissions.defaultMode: "bypassPermissions"` from `~/.claude/settings.json` and Codex's `approval_policy = "never"` / `sandbox_mode = "danger-full-access"` from `~/.codex/config.toml` by hand.
 
 ### Why aren't my Docker container ports (`docker run -p 8080:8080`) reachable from the internet?
 
@@ -145,5 +154,5 @@ Yes:
 
 1. **Restore home dotfiles:** Copy backed-up files back from `~/.dotfiles-backup/<timestamp>/` and delete symlinks pointing into `~/.dotfiles`.
 2. **Remove agents or sites:** Run `agents remove <name> --purge` or `site rm <domain> --purge-cert`.
-3. **Restore password-gated sudo:** Set `FULL_CONTROL=false` in `config.env`, ensure your account has a working password and another admin session, and run `./install.sh packages` to remove the managed passwordless-sudo rule. Do not remove your only working administrative access.
+3. **Restore password-gated sudo:** Set a password first (`sudo passwd <user>`), keep another admin session open, set `FULL_CONTROL=false` (and `DOCKER_SUDOLESS=false`) in `config.env`, and run `./install.sh packages` to remove the managed passwordless-sudo rule. Then remove docker group membership (`sudo gpasswd -d <user> docker`) and agent bypass settings by hand (see [FULL_CONTROL](#what-is-full_control-and-should-i-keep-it-enabled)). Do not remove your only working administrative access.
 4. **Inspect system fragments (server profile):** Managed fragments carry `Managed by ~/.dotfiles` headers. There is no complete automated uninstaller: package installs, group membership, shell changes, provider/cloud-init settings, and merged service configs may need manual restoration. Restore service configs from backups, validate them before reload, and use a VM snapshot for a complete rollback.

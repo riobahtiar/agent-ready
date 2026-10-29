@@ -59,7 +59,7 @@ while (($#)); do
         ;;
     --install) RUN_INSTALL=1 ;;
     -h | --help)
-        sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *) echo "unknown option: $1" >&2 && exit 2 ;;
@@ -131,16 +131,20 @@ if [[ -n ${SUDO_USER:-} && $SUDO_USER != root && $SUDO_USER != "$TARGET_USER" ]]
     [[ -n $sudo_home ]] && key_sources+=("$sudo_home/.ssh/authorized_keys" "$sudo_home/.ssh/authorized_keys2")
 fi
 # Cloud images put command="echo 'Please login as the user …';exit 142"
-# on root's key: copied as-is it would lock the user out after hardening,
-# so only that stub is stripped. Every other option (from=, restrict,
-# no-*, other forced commands) is a deliberate restriction and stays.
+# (plus no-port-forwarding,…) on root's key: copied as-is it would lock the
+# user out after hardening. Option values can hold escaped quotes, so rather
+# than parse them, every key line is cut down to its key-type token onward.
 usable_keys="$(cat "${key_sources[@]}" 2>/dev/null | awk '
     /^[[:space:]]*(#|$)/ { next }
-    /command="[^"]*Please login as/ {
-        sub(/command="[^"]*Please login as[^"]*",?/, "")
-        sub(/,[[:space:]]+/, " ")
-    }
-    { print }' || true)"
+    {
+        for (i = 1; i <= NF; i++)
+            if ($i ~ /^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9-]+|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)$/) {
+                out = $i
+                for (j = i + 1; j <= NF; j++) out = out " " $j
+                print out
+                next
+            }
+    }' || true)"
 if [[ -n $usable_keys ]]; then
     install -d -m 700 -o "$TARGET_USER" -g "$TARGET_USER" "$TARGET_HOME/.ssh"
     touch "$TARGET_HOME/.ssh/authorized_keys"
@@ -188,10 +192,11 @@ if [[ ! -f $DOTFILES_DIR/config.env ]]; then
 fi
 
 # Unattended mode (FULL_CONTROL in config.env, on by default on servers):
-# passwordless sudo from the start, so install.sh never asks. Validated with
+# passwordless sudo from the start, so install.sh never asks. Truthy values
+# mirror is_true; empty means the server default (on). Validated with
 # visudo; a broken file would lock sudo.
 full_control_rule=/etc/sudoers.d/90-dotfiles-full-control
-if grep -qE "^FULL_CONTROL=(['\"]?(true|yes|1|on)['\"]?|['\"]{0,2})[[:space:]]*(#|$)" "$DOTFILES_DIR/config.env" 2>/dev/null; then
+if grep -qE "^FULL_CONTROL=(['\"]?([Tt]rue|[Yy]es|1|on)['\"]?|['\"]{0,2})[[:space:]]*(#|$)" "$DOTFILES_DIR/config.env" 2>/dev/null; then
     rule="$(mktemp)"
     printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$TARGET_USER" >"$rule"
     chmod 0440 "$rule"

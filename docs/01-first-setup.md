@@ -42,6 +42,16 @@ ssh root@203.0.113.10
 curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | bash -s -- --user deploy
 ```
 
+On providers that give you a non-root sudo user (e.g. `ubuntu`), run it through sudo:
+
+```bash
+ssh ubuntu@203.0.113.10
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | sudo bash -s -- --user deploy
+```
+
+To seed settings, pass them with `sudo env KEY=value bash …` (plain
+`sudo KEY=value` may be stripped by sudo's environment policy).
+
 `bootstrap.sh` creates the target user (`deploy`, in the `sudo` group), copies
 SSH keys from `/root/.ssh/authorized_keys` (or `~$SUDO_USER/.ssh/authorized_keys`
 when run via `sudo` from a default cloud login), strips cloud-image forced-command
@@ -91,21 +101,33 @@ and offers **Everything in order**.
 - **Unattended mode (`FULL_CONTROL`):** On the `server` profile, `FULL_CONTROL=true`
   is the default: bootstrap installs a `visudo`-validated passwordless sudo rule
   for `TARGET_USER`, Stage 05 maintains it, and agent configuration enables
-  unattended Claude Code and Codex permissions. If you set `FULL_CONTROL=false`,
-  Stage 05 removes this repository's passwordless sudo rule and agents use
-  normal permission defaults. Set a user password before switching if needed;
-  other sudoers policies still apply. This does not weaken SSH or firewall rules.
+  unattended Claude Code and Codex permissions. On servers `DOCKER_SUDOLESS`
+  also defaults to true regardless of `FULL_CONTROL` (the `docker` group is
+  root-equivalent). For password-gated sudo and prompting agents, set
+  `FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true`, ideally at
+  bootstrap (it seeds every nonempty setting from its environment), e.g.
+  `curl -fsSL …/bootstrap.sh | sudo env FULL_CONTROL=false DOCKER_SUDOLESS=false bash -s -- --user deploy`.
+  Switching off later: set a password first (`sudo passwd deploy`), because
+  Stage 05 removes this repository's passwordless sudo rule. Nothing reverts
+  existing `docker` group membership (`sudo gpasswd -d deploy docker`) or agent
+  bypass settings already written (Claude `permissions.defaultMode:
+  "bypassPermissions"` in `~/.claude/settings.json`; Codex `approval_policy =
+  "never"` / `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml`);
+  remove those by hand. Other sudoers policies still apply; SSH and firewall
+  rules are unaffected.
 - **Optional Hermes & domains:** If `HERMES=true` and `HERMES_DOMAIN` is set
   (e.g. `hermes.example.com`), Stage 80 prompts for a dashboard password (12+
-  characters, stored only as a scrypt hash) and provisions TLS. Leave
-  `HERMES_DOMAIN` empty or set `HERMES=false` to skip publishing the web dashboard.
+  characters, stored only as a scrypt hash) and provisions TLS. Set
+  `HERMES=false` to skip Hermes. With `HERMES_DOMAIN` empty, Stage 80 skips
+  Hermes entirely (no CLI, no Telegram credentials, no dashboard); for just the
+  CLI run `agents install hermes`.
 
 Installation takes 15–25 minutes (mostly downloading runtimes via `mise`). If a
 stage fails or reports incomplete, fix what it printed and run
 `./install.sh --changed`: completed stages are skipped.
 
-**Non-interactive / automated alternative:** edit `config.env` (or pass
-environment overrides on the command line) and run with `--all -y`:
+**Non-interactive / automated alternative:** edit `config.env` (or pass exported
+environment overrides, which need an existing `config.env`) and run with `--all -y`:
 
 ```bash
 GIT_NAME="Your Name" GIT_EMAIL="you@example.com" HERMES=false \
@@ -145,7 +167,8 @@ browser and paste the code back.
 
 ## 6. Hermes and Telegram (optional)
 
-If you enabled Hermes (`HERMES=true`):
+Only if `HERMES=true` and `HERMES_DOMAIN` is set (otherwise Stage 80 skipped
+Hermes; `agents install hermes` gives you just the CLI):
 
 ```fish
 hermes setup               # pick a model provider
