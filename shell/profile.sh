@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# Managed by ~/.dotfiles (shell/profile.sh) — sourced from ~/.profile.
+# Managed by ~/.dotfiles (AgentReady; shell/profile.sh) — sourced from ~/.profile.
 # Login shells and everything they spawn (agents' `bash -lc`, systemd user
 # units via `bash -l`, ssh one-liners) get the same PATH as fish. Linux, WSL and macOS.
 

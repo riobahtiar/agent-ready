@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/30-agents.toml) — agent CLIs
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/30-agents.toml) — agent CLIs
 # that ship as packages. Each still needs an agents.d/<name>.sh module (install,
 # update, sign-in, herdr hook). Retire one: delete its line here and run
 # `agents retire <name>`.

@@ -1,8 +1,10 @@
-# dotfiles-cloud
+# AgentReady — Developer Environments for AI Coding Agents
 
-Idempotent dotfiles and provisioning stages for machines that run AI coding agents—from remote Linux servers to daily-driver laptops and desktops.
+**Your machine, ready for agentic development.**
 
-One repository supports two profiles:
+AgentReady configures macOS and Linux developer environments for AI coding agents—from local desktops and WSL to remote Ubuntu servers. Bring your preferred agents and model providers; get repeatable setup, a consistent toolchain, and explicit control over permissions, optional apps, and networking.
+
+Two profiles support the same agentic development workflow:
 
 - **`server`** — Provisioned and **tested on the latest Ubuntu LTS** for running multiple AI coding agents side by side (Claude Code, Codex, OpenCode, omp, Grok, Muse, Hermes) and hosting web apps behind `nginx` + Let's Encrypt TLS, with SSH hardening, `ufw`, `fail2ban`, localhost-bound Docker, and `zram` + swap.
 - **`desktop`** — For machines you work on directly: **macOS** (Homebrew + `mise`), **Arch / Omarchy**, **Ubuntu or Fedora desktop**, and **WSL2**. Installs the same shell, `mise` runtimes, modern CLI tools, coding agents, sandboxing, and dev tunnels—while leaving desktop firewalls, web servers, and OS tuning untouched.
@@ -13,7 +15,7 @@ One repository supports two profiles:
 
 ---
 
-## Quick Start
+## Quick start: set up your AI coding environment
 
 ### 1. Fresh Linux Server (`server` profile)
 
@@ -21,7 +23,7 @@ Run `bootstrap.sh` once as `root`, or with `sudo` from a cloud default login (fo
 
 ```bash
 # Replace 'deploy' with your preferred non-root username (as root, drop 'sudo')
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | sudo bash -s -- --user deploy
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh | sudo bash -s -- --user deploy
 
 # Reconnect in a new terminal with your SSH key (keep the root session open until verified), then run:
 ssh deploy@203.0.113.10
@@ -31,9 +33,14 @@ ssh deploy@203.0.113.10
 ### 2. macOS / Linux Desktop / WSL2 (`desktop` profile)
 
 ```bash
-git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
+git clone https://github.com/riobahtiar/agent-ready ~/.dotfiles
 ~/.dotfiles/setup-desktop.sh
 ```
+
+The project name is AgentReady; `~/.dotfiles` remains the installation path.
+Existing service names, state directories, and backups stay in place. Project
+environment variables now use the `AGENT_READY_*` prefix; see the
+[configuration reference](docs/10-reference.md).
 
 On first run in a terminal, an interactive wizard prompts for your settings (Git identity, enabled features, agents, optional domains) and writes `~/.dotfiles/config.env` (`0600`, git-ignored). Subsequent runs are state-aware and idempotent:
 
@@ -58,14 +65,14 @@ not uninstall it. Stage 85 never runs for servers. See the
 [desktop app platform matrix](docs/15-what-gets-installed.md#optional-desktop-apps-stage-85)
 for all IDs, package sources, and limitations.
 
-### Environment Variable & Headless Configuration
+### Automate setup with environment variables
 
 Personal settings in [`config.env.example`](config.env.example) use dummy or empty values. You can configure them with `config.env`, the settings wizard, or exported environment variables:
 
 ```bash
 # Bootstrap a custom fork and user non-interactively (plain 'sudo KEY=value' may be stripped; use 'sudo env')
 sudo env TARGET_USER=deploy \
-    DOTFILES_REPO=https://github.com/your-org/dotfiles-cloud.git \
+    AGENT_READY_REPO=https://github.com/your-org/agent-ready.git \
     TIMEZONE=UTC \
     HERMES=false \
     bash bootstrap.sh
@@ -77,11 +84,11 @@ HERMES=false \
 ~/.dotfiles/setup-server.sh --all -y
 ```
 
-Start from an existing private `config.env` (created by bootstrap or `cp config.env.example config.env; chmod 600 config.env`); with `--all`/`-y` and no `config.env`, the installer stops before saving anything. During installation, **nonempty exported overrides are validated and then saved to that file, including secret overrides**; they are not temporary. `--help`, `--list`, and `--status` do not save them. Values inherited from a parent dotfiles process (for example after the settings wizard or from `vps`), values equal to those in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to the shell-exported `~/.config/dotfiles/projects_dir` are not treated as overrides; to change those, edit `config.env` or run `./install.sh --configure`. To clear a value, edit the file or use the wizard. Use your fork's actual URL in place of the dummy fork URL above.
+Start from an existing private `config.env` (created by bootstrap or `cp config.env.example config.env; chmod 600 config.env`); with `--all`/`-y` and no `config.env`, the installer stops before saving anything. During installation, **nonempty exported overrides are validated and then saved to that file, including secret overrides**; they are not temporary. `--help`, `--list`, and `--status` do not save them. Values inherited from a parent AgentReady process (for example after the settings wizard or from `vps`), values equal to those in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to the shell-exported `~/.config/dotfiles/projects_dir` are not treated as overrides; to change those, edit `config.env` or run `./install.sh --configure`. To clear a value, edit the file or use the wizard. Use your fork's actual URL in place of the dummy fork URL above.
 
 ---
 
-## What You Get
+## Tools for agentic development
 
 | Area | Included | Profile |
 |---|---|---|
@@ -111,7 +118,7 @@ Commands accept flags for scripts and AI agents; most management commands also o
 
 ---
 
-## Repository Layout
+## How AgentReady is organized
 
 ```text
 bootstrap.sh         first-time root bootstrap for a fresh Linux server (user, SSH keys, clone, config.env)
@@ -135,7 +142,7 @@ Full architecture, `config.env` keys, and module contracts: **[10 Reference](doc
 
 ---
 
-## Platform Support
+## Platform support and testing
 
 - **Server (`./setup-server.sh`):** The repository's recorded end-to-end testing covers **Ubuntu 26.04 LTS, the latest Ubuntu LTS**, in a systemd container, including stage re-runs. This is not a guarantee for every provider or workload. Real agent sign-ins, Telegram delivery, Let's Encrypt with public DNS, and nested gVisor execution were not covered by that run.
 - **Desktop (`./setup-desktop.sh`):** Targets macOS (Homebrew + `mise`), Arch Linux & [Omarchy](https://omarchy.org/), Ubuntu/Debian & Fedora desktops, and WSL2 (`systemd=true`). Arch package/dotfile stages have container coverage; macOS, Omarchy, and WSL have not been end-to-end verified. Existing conflicting dotfiles are backed up to `~/.dotfiles-backup/<timestamp>/`.
@@ -144,7 +151,7 @@ See **[08 Multi-OS](docs/08-multi-os.md)** and **[15 What gets installed where](
 
 ---
 
-## FAQ & Troubleshooting
+## Setup FAQ and troubleshooting
 
 New to setting up this repo? Read **[16 Setup & installation FAQ](docs/16-faq.md)** for answers on:
 - Running without a domain, Hermes, or Telegram (`HERMES=false`)
@@ -157,7 +164,7 @@ Hit an issue during or after install? Run `doctor` and `./install.sh --status`, 
 
 ---
 
-## Contributing & Security
+## Contribute to AgentReady
 
 - **Contributing:** See **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[AGENTS.md](AGENTS.md)**. Run `mise run fmt` and `mise run check` before opening a pull request.
 - **Security policy:** Please report security issues privately via **[SECURITY.md](SECURITY.md)** rather than public issues.

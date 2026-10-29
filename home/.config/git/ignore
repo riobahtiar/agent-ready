@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles — global gitignore for every repo on this box.
+# Managed by ~/.dotfiles (AgentReady) — global gitignore for every repo on this box.
 
 # Secrets
 .env

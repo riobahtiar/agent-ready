@@ -1,6 +1,6 @@
-# Recommended optional tools
+# Optional tools for remote development and AI coding workflows
 
-Ideas for extending your server or workstation with optional tools, grouped by
+Ideas for extending your AgentReady server or workstation with optional tools, grouped by
 use case. Some built-in opt-ins and already-installed tools are included for
 context and labelled below.
 

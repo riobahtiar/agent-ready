@@ -1,6 +1,6 @@
-# Shell and prompt
+# Fish shell and prompt for agentic development
 
-fish is the login shell, structured cleanly in stages: PATH, then
+AgentReady uses fish as the login shell, structured cleanly in stages: PATH, then
 mise, interactive extras, secrets, then everything in `~/.config/fish/cloud/*.fish`.
 bash gets the same PATH, mise shims and secrets (`shell/profile.sh`,
 `shell/bashrc.sh`) because agents and scripts run `bash -c`. bash keeps the
@@ -39,7 +39,7 @@ Only what's true for the current directory, read from files and PATH: no
 | Section | When it shows |
 |---|---|
 | `status` | `✘ 1`: the last command's exit code, when it failed |
-| `duration` | how long the last command took, when ≥ `CLOUD_PROMPT_SLOW_MS` (3000) |
+| `duration` | how long the last command took, when ≥ `AGENT_READY_PROMPT_SLOW_MS` (3000) |
 | `jobs` | `⚙ 2`: background jobs in this shell |
 | `worktree` | `⎇ worktree`: inside `.worktrees/` or an agent's worktree |
 | `node` | `package.json` without a bun lockfile → active Node version |
@@ -54,20 +54,20 @@ Markers are searched from the current directory up to the repo root (or `~`).
 Choose and order sections:
 
 ```fish
-set -g CLOUD_PROMPT_RIGHT status duration worktree bun go   # in prompt.fish
+set -g AGENT_READY_PROMPT_RIGHT status duration worktree bun go   # in prompt.fish
 ```
 
 ### Greeting and title
 
 - On every **SSH login** shell you get the greeting from `bin/motd` unless
-  `CLOUD_GREETING=off` (`LOGIN_GREETING` only toggles Ubuntu's own MOTD and the
+  `AGENT_READY_GREETING=off` (`LOGIN_GREETING` only toggles Ubuntu's own MOTD and the
   provider's banner, which stage 10 turns off):
   previous login (time, IP), uptime and boot time, pending/security updates and
   the last apt run, load, memory and swap, disk, Docker containers, running
   agents, fail2ban bans and the firewall, plus warnings for a pending reboot,
   failed services or a nearly full disk. Run `motd` any time to see it again.
   herdr panes, subshells and local terminals stay quiet.
-  `set -g CLOUD_GREETING eel` brings back the theme's ocean one-liners;
+  `set -g AGENT_READY_GREETING eel` brings back the theme's ocean one-liners;
   `off` disables it.
 - The terminal or herdr tab title is `command · host: dir`.
 

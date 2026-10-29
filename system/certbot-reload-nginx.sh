@@ -1,3 +1,3 @@
 #!/bin/sh
-# Managed by ~/.dotfiles — certbot deploy hook: pick up renewed certificates.
+# Managed by ~/.dotfiles (AgentReady) — certbot deploy hook: pick up renewed certificates.
 systemctl reload nginx

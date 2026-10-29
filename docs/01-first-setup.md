@@ -1,6 +1,6 @@
-# First setup
+# Ubuntu server setup for AI coding agents
 
-From a fresh Ubuntu LTS server to coding agents running, in about 20–30 minutes.
+Set up an AgentReady developer environment on a fresh Ubuntu LTS server.
 Prior repository records document end-to-end testing on **Ubuntu 26.04, the
 latest Ubuntu LTS, in systemd containers**. Laptops and desktops (macOS,
 Arch/Omarchy, Ubuntu/Fedora desktop, WSL) skip step 1: see
@@ -39,14 +39,14 @@ before selecting; stage 85 is never applied to servers.
 
 ```bash
 ssh root@203.0.113.10
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | bash -s -- --user deploy
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh | bash -s -- --user deploy
 ```
 
 On providers that give you a non-root sudo user (e.g. `ubuntu`), run it through sudo:
 
 ```bash
 ssh ubuntu@203.0.113.10
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | sudo bash -s -- --user deploy
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh | sudo bash -s -- --user deploy
 ```
 
 To seed settings, pass them with `sudo env KEY=value bash …` (plain
@@ -66,8 +66,8 @@ Useful `bootstrap.sh` options and environment variables:
 | Flag | Env var | Description |
 |---|---|---|
 | `--user <name>` | `TARGET_USER` (or `BOOTSTRAP_USER`) | Target non-root Linux username; defaults to `SUDO_USER` via sudo, otherwise prompts at a TTY (default `deploy`); required non-interactively |
-| `--repo <url>` | `DOTFILES_REPO` | Custom fork or repository URL (default: `https://github.com/riobahtiar/dotfiles-cloud.git`) |
-| `--branch <name>` | `DOTFILES_BRANCH` | Git branch to clone (default: `main`) |
+| `--repo <url>` | `AGENT_READY_REPO` | Custom fork or repository URL (default: `https://github.com/riobahtiar/agent-ready.git`) |
+| `--branch <name>` | `AGENT_READY_BRANCH` | Git branch to clone (default: `main`) |
 | `--install` | `BOOTSTRAP_INSTALL=1` | Immediately launch `setup-server.sh` after bootstrapping |
 
 Any configuration key from `config.env.example` passed in the environment (such
@@ -75,12 +75,12 @@ as `TIMEZONE=UTC` or `HERMES=false`) is automatically seeded into the new
 `config.env`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | \
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh | \
     TIMEZONE=UTC HERMES=false bash -s -- --user deploy
 ```
 
-Deploying from a local checkout instead? Copy the folder up (`scp -r dotfiles-cloud root@203.0.113.10:/root/`)
-and run `bash /root/dotfiles-cloud/bootstrap.sh --user deploy`.
+Deploying from a local checkout instead? Copy the folder up (`scp -r agent-ready root@203.0.113.10:/root/`)
+and run `bash /root/agent-ready/bootstrap.sh --user deploy`.
 
 **Keep this root session open** until step 3 has passed.
 ## 2. Install (as deploy, from a new terminal)

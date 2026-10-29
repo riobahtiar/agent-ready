@@ -14,8 +14,8 @@
 # docs/09-sandboxing.md. Claude Code also has its own: /sandbox inside a session.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
 load_config
 
 usage() {
@@ -209,7 +209,7 @@ menu() {
         [[ -n $cmd ]] && cmd_run bash -c "$cmd"
         ;;
     box) cmd_box ;;
-    policy) exec "${EDITOR:-nano}" "$DOTFILES_DIR/home/.srt-settings.json" ;;
+    policy) exec "${EDITOR:-nano}" "$AGENT_READY_DIR/home/.srt-settings.json" ;;
     esac
 }
 

@@ -1,13 +1,13 @@
-name: Bug Report
-description: Report a bug in setup stages, CLI commands, shell config, or modules
+name: AgentReady Bug Report
+description: Report an AgentReady setup, coding-agent, desktop-app, or CLI issue
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Before filing, check the **[Setup & Installation FAQ](https://github.com/riobahtiar/dotfiles-cloud/blob/main/docs/16-faq.md)** and **[Troubleshooting Guide](https://github.com/riobahtiar/dotfiles-cloud/blob/main/docs/14-troubleshooting.md)**.
-        > **Privacy & Security:** Redact real domains, public IP addresses, usernames, and tokens before pasting logs. For security vulnerabilities, use [Private Vulnerability Reporting](https://github.com/riobahtiar/dotfiles-cloud/security/advisories/new) instead.
+        Before filing, check the **[Setup & Installation FAQ](https://github.com/riobahtiar/agent-ready/blob/main/docs/16-faq.md)** and **[Troubleshooting Guide](https://github.com/riobahtiar/agent-ready/blob/main/docs/14-troubleshooting.md)**.
+        > **Privacy & Security:** Redact real domains, public IP addresses, usernames, and tokens before pasting logs. For security vulnerabilities, use [Private Vulnerability Reporting](https://github.com/riobahtiar/agent-ready/security/advisories/new) instead.
 
   - type: dropdown
     id: profile

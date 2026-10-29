@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# motd — the login greeting: who logged in last, uptime, updates, resources,
+# motd — the AgentReady login greeting: who logged in last, uptime, updates, resources,
 # containers, agents, security. Shown by fish and bash on SSH logins (replaces
 # the distribution's and provider's MOTD, see stages/10-system.sh). Fast by design:
 # no network or package-manager calls; optional facts fail quietly.
@@ -10,7 +10,7 @@ source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
 
 case ${1:-} in
 -h | --help)
-    printf 'Usage: motd\n\nPrint the login greeting: sessions, uptime, updates and resources.\n'
+    printf 'Usage: motd\n\nPrint the AgentReady login greeting: sessions, uptime, updates and resources.\n'
     exit 0
     ;;
 esac
@@ -29,7 +29,7 @@ asroot() { if is_root; then "$@"; else sudo -n "$@" 2>/dev/null; fi; }
 
 user=$(id -un)
 . /etc/os-release 2>/dev/null || true
-printf '\n  %s%s%s  %s·  %s  ·  kernel %s%s\n\n' "$C_BOLD$C_BLUE" "$(hostname -s)" "$C_RESET" "$C_DIM" \
+printf '\n  %s%s%s  %s·  %s  ·  kernel %s%s\n\n' "$C_BOLD$C_BLUE" "AgentReady · $(hostname -s)" "$C_RESET" "$C_DIM" \
     "${PRETTY_NAME:-$(uname -s)}" "$(uname -r | cut -d- -f1-2)" "$C_RESET"
 
 # ── Last login: the previous session ──

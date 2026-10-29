@@ -1,4 +1,4 @@
-# Contributor Covenant Code of Conduct
+# AgentReady Code of Conduct
 
 ## Our Pledge
 

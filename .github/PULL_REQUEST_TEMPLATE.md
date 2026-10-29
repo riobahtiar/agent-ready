@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- Briefly describe what this PR changes and why. -->
+<!-- Describe what this changes for AgentReady users and why. -->
 
 ## Related Issue
 

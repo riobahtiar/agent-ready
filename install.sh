@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — set up this machine from the stages in ./stages.
+# install.sh — set up this machine with AgentReady stages in ./stages.
 #
 #   ./install.sh                 at a terminal: settings wizard (first run), then a menu
 #   ./install.sh -a, --all       every stage that applies to this OS/profile, in order
@@ -41,14 +41,14 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 fi
 set -Eeuo pipefail
 
-DOTFILES_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-export DOTFILES_DIR
-SELF="$DOTFILES_DIR/install.sh" # absolute: `bash install.sh` re-execs too
+AGENT_READY_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+export AGENT_READY_DIR
+SELF="$AGENT_READY_DIR/install.sh" # absolute: `bash install.sh` re-execs too
 # shellcheck source=lib/common.sh
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/configure.sh"
-source "$DOTFILES_DIR/lib/stages.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/configure.sh"
+source "$AGENT_READY_DIR/lib/stages.sh"
 
 usage() {
     sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
@@ -107,14 +107,14 @@ if ((CONFIGURE)) || { asking && config_looks_unset; }; then
         { ui_interactive && ui_confirm "Run the installer now?" yes; } || exit 0
     fi
 fi
-[[ -f ${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env} ]] ||
+[[ -f ${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env} ]] ||
     die "Missing config.env — run: ./install.sh --configure (or cp config.env.example config.env)"
 load_config
 id "$TARGET_USER" >/dev/null 2>&1 || die "User '$TARGET_USER' does not exist — run bootstrap.sh first"
 # Save caller overrides (config_snapshot_env) once load_config has accepted
 # them, so --changed hashes the settings actually used and root reads them
 # after sudo. Secrets travel this way too, never on a sudo/env command line.
-CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+CONFIG_FILE="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
 for var in "${!CONFIG_ENV_OVERRIDES[@]}"; do
     config_set_owned "$CONFIG_FILE" "$var" "${!var}"
 done
@@ -136,11 +136,11 @@ export PROFILE
 
 # Everything (shell hooks, PATH, the cleanup timer, the sandbox policy) expects
 # the repo at ~/.dotfiles. Elsewhere, link it there rather than half-work.
-if [[ $DOTFILES_DIR != "$TARGET_HOME/.dotfiles" ]]; then
+if [[ $AGENT_READY_DIR != "$TARGET_HOME/.dotfiles" ]]; then
     if [[ ! -e $TARGET_HOME/.dotfiles && ! -L $TARGET_HOME/.dotfiles ]]; then
-        run_as_user ln -s "$DOTFILES_DIR" "$TARGET_HOME/.dotfiles"
-        step "linked ~/.dotfiles → $DOTFILES_DIR"
-    elif [[ $(readlink -f "$TARGET_HOME/.dotfiles") != "$DOTFILES_DIR" ]]; then
+        run_as_user ln -s "$AGENT_READY_DIR" "$TARGET_HOME/.dotfiles"
+        step "linked ~/.dotfiles → $AGENT_READY_DIR"
+    elif [[ $(readlink -f "$TARGET_HOME/.dotfiles") != "$AGENT_READY_DIR" ]]; then
         die "~/.dotfiles is another checkout — run install.sh from there, or move it aside"
     fi
 fi
@@ -159,7 +159,7 @@ count_changed() {
 }
 
 if asking; then
-    ui_title "$OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' · WSL') · profile: $PROFILE · user: $TARGET_USER"
+    ui_title "AgentReady · $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' · WSL') · profile: $PROFILE · user: $TARGET_USER"
     if setup_done; then
         changed="$(count_changed)"
         step "already set up — last run $(setup_last_run) · $changed stage(s) changed or never applied since"
@@ -217,11 +217,11 @@ if [[ $OS_KIND == linux ]] && ! is_root; then
     # defaults as if they were explicit overrides and freeze auto settings.
     passthrough=()
     # (SSH_CONNECTION: stage 20 never lets fail2ban ban the address you're installing from.)
-    # DOTFILES_CONFIG only from inside the repo: root sources that file.
-    if [[ -n ${DOTFILES_CONFIG:-} && $(readlink -f "$DOTFILES_CONFIG") != "$DOTFILES_DIR"/* ]]; then
-        die "DOTFILES_CONFIG must point inside $DOTFILES_DIR (root sources it)"
+    # AGENT_READY_CONFIG only from inside the repo: root sources that file.
+    if [[ -n ${AGENT_READY_CONFIG:-} && $(readlink -f "$AGENT_READY_CONFIG") != "$AGENT_READY_DIR"/* ]]; then
+        die "AGENT_READY_CONFIG must point inside $AGENT_READY_DIR (root sources it)"
     fi
-    for var in HERMES_RESET_PASSWORD ASSUME_YES DOTFILES_CONFIG PROFILE_OVERRIDE SSH_CONNECTION CLOUD_UI; do
+    for var in HERMES_RESET_PASSWORD ASSUME_YES AGENT_READY_CONFIG PROFILE_OVERRIDE SSH_CONNECTION AGENT_READY_UI; do
         [[ -v $var ]] && passthrough+=("$var=${!var}")
     done
     exec sudo -- env "${passthrough[@]}" "$SELF" "${orig_args[@]}"
@@ -304,7 +304,7 @@ if ((ran == 0)); then
     pick) die "No stage matched: ${selected[*]} (see --list)" ;;
     esac
 fi
-ok "Done: $ran stage(s) in $((SECONDS - started))s$( ((skipped)) && echo " · $skipped not for this machine")"
+ok "AgentReady setup complete: $ran stage(s) in $((SECONDS - started))s$( ((skipped)) && echo " · $skipped not for this machine")"
 ((${#incomplete[@]})) && warn "incomplete (re-run with --changed once fixed): ${incomplete[*]}"
 ((${#skipped_server[@]})) && warn "server stages NOT applied on this OS: ${skipped_server[*]} — this box lacks that protection"
 
@@ -312,20 +312,20 @@ if [[ $MODE == renew ]]; then
     log "Renew: remaining upgrades and site re-render"
     # Stages already upgraded mise tools and agents. What's left runs here
     # directly: we're root, and a user-side sudo couldn't prompt now.
-    run_as_user "$DOTFILES_DIR/bin/update-all" -y extras || warn "update-all extras reported failures"
+    run_as_user "$AGENT_READY_DIR/bin/update-all" -y extras || warn "update-all extras reported failures"
     if have composer; then
         if [[ $OS_KIND == macos ]]; then composer self-update --quiet; else COMPOSER_ALLOW_SUPERUSER=1 composer self-update --quiet; fi ||
             warn "composer self-update failed"
     fi
     if [[ $PROFILE == server ]] && have nginx; then
-        "$DOTFILES_DIR/bin/site" renew || warn "site renew reported failures"
+        "$AGENT_READY_DIR/bin/site" renew || warn "site renew reported failures"
         if have certbot; then certbot renew --quiet || warn "certbot renew failed"; fi
     fi
 fi
 
-if [[ $MODE == all && ! -f $DOTFILES_DIR/.state/next-steps-shown ]]; then
-    mkdir -p "$DOTFILES_DIR/.state"
-    touch "$DOTFILES_DIR/.state/next-steps-shown"
+if [[ $MODE == all && ! -f $AGENT_READY_DIR/.state/next-steps-shown ]]; then
+    mkdir -p "$AGENT_READY_DIR/.state"
+    touch "$AGENT_READY_DIR/.state/next-steps-shown"
     if [[ $PROFILE == server ]]; then
         cat >&2 <<EOF
 

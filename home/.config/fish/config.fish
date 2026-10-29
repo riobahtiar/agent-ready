@@ -1,5 +1,5 @@
 # Fish Shell Configuration
-# Managed by ~/.dotfiles (home/.config/fish/config.fish).
+# Managed by ~/.dotfiles (AgentReady; home/.config/fish/config.fish).
 # Structure: PATH → mise → interactive extras → secrets → functions.
 
 # The easy-eel theme draws the greeting (cloud/prompt.fish); this only silences

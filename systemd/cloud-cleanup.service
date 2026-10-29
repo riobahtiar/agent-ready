@@ -1,8 +1,8 @@
-# Managed by ~/.dotfiles (systemd/cloud-cleanup.service) — rendered by stages/90-maintenance.sh
+# Managed by ~/.dotfiles (AgentReady; systemd/cloud-cleanup.service) — rendered by stages/90-maintenance.sh
 # Safe subset only (--auto): caches, docker build cache/dangling images, agent
 # logs/tmp, git worktree metadata. Never removes worktrees or kills processes.
 [Unit]
-Description=Weekly cleanup of caches and agent residue
+Description=AgentReady weekly cleanup of caches and agent residue
 After=docker.service
 
 [Service]

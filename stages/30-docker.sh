@@ -4,8 +4,8 @@
 # stage-profile: all
 # stage-desc: Docker Engine + compose/buildx (official repo, distro fallback), loopback defaults for new bridge networks
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
 load_config
 # (macOS: use OrbStack or Docker Desktop — docs/08-multi-os.md.)
 
@@ -94,7 +94,7 @@ daemon_json=/etc/docker/daemon.json
 desired="$(mktemp)"
 existing='{}'
 as_root test -s "$daemon_json" && existing="$(as_root cat "$daemon_json")"
-jq -n --argjson have "$existing" --slurpfile ours "$DOTFILES_DIR/system/docker-daemon.json" '$have * $ours[0]' >"$desired"
+jq -n --argjson have "$existing" --slurpfile ours "$AGENT_READY_DIR/system/docker-daemon.json" '$have * $ours[0]' >"$desired"
 if have runsc; then
     jq --arg p "$(command -v runsc)" '.runtimes.runsc.path = $p' "$desired" >"$desired.new" && mv "$desired.new" "$desired"
 fi

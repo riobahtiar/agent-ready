@@ -1,9 +1,9 @@
-# AGENTS.md — working on this repo
+# AGENTS.md — contributing to AgentReady
 
-This repo configures machines for AI-assisted software development: a **server**
+AgentReady configures machines for agentic software development: a **server**
 profile (**tested on Ubuntu 26.04, the latest Ubuntu LTS, in systemd containers**
 for running coding agents and hosting sites) and a **desktop** profile (macOS
-with Homebrew + mise, Omarchy/Arch, Ubuntu/Fedora desktop, WSL). It lives at `~/.dotfiles`. Its files are **live**:
+with Homebrew + mise, Omarchy/Arch, Ubuntu/Fedora desktop, WSL). Its conventional checkout remains `~/.dotfiles`; adopting AgentReady needs no directory move. Its files are **live**:
 `home/` is symlinked into `~`, and `bin/` is on `PATH`. User docs live in
 `docs/` (index: `docs/README.md`), and contributor/security policies live in
 `CONTRIBUTING.md` and `SECURITY.md`; this file covers how to change things safely.

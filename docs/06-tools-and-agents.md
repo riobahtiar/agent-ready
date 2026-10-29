@@ -1,6 +1,6 @@
-# Tools and agents
+# AI coding agent CLIs, runtimes, and developer tools
 
-Two kinds of things get installed for you, and each is modular:
+AgentReady installs two modular groups for your developer environment:
 
 | Kind | Lives in | Add one | Retire one |
 |---|---|---|---|

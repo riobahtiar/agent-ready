@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (system/fail2ban.local)
+# Managed by ~/.dotfiles (AgentReady; system/fail2ban.local)
 [DEFAULT]
 bantime  = 1h
 findtime = 10m

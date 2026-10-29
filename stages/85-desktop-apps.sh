@@ -5,9 +5,9 @@
 # stage-inputs: lib/desktop-apps.sh
 # stage-desc: opt-in desktop apps from DESKTOP_APPS (empty or none installs nothing)
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
-source "$DOTFILES_DIR/lib/desktop-apps.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/desktop-apps.sh"
 load_config
 
 # Retain the desktop boundary even when this script is invoked directly.

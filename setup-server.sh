@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-server.sh — set up a VPS / headless Linux server: everything in
+# setup-server.sh — AgentReady setup for a VPS / headless Linux server: everything in
 # setup-desktop.sh plus SSH hardening, ufw + fail2ban, zram/swap and kernel
 # tuning, nginx + Let's Encrypt, PHP-FPM, the Hermes dashboard and a weekly
 # cleanup timer. Takes the same flags as install.sh (--changed, --renew, -y, <stage>…).

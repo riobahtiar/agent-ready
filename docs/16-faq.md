@@ -1,6 +1,6 @@
-# Setup and installation FAQ
+# AgentReady setup FAQ — Ubuntu servers, macOS, and Linux desktops
 
-Answers to the most common questions before and during setup on a server or desktop. For runtime errors after setup, see [14 Troubleshooting](14-troubleshooting.md).
+Answers to common questions before and during developer environment setup with AgentReady. For runtime errors after setup, see [14 Troubleshooting](14-troubleshooting.md).
 
 ## Before installing
 
@@ -27,11 +27,11 @@ The `server` profile is **tested on the latest Ubuntu LTS**. Debian-family serve
 You have three ways to configure the installer (all personal defaults are empty or dummy placeholders out of the box):
 1. **Interactive wizard (default on first terminal run):** Run `./setup-server.sh`, `./setup-desktop.sh`, or `./install.sh --configure`.
 2. **Config file:** Copy `cp config.env.example config.env` (`chmod 600 config.env`) and edit values before running `--all -y`.
-3. **Environment variable overrides (ideal for automation, cloud-init, and forks):** Nonempty exported `config.env` keys take precedence over the file. After validation (and before sudo escalation) the installer **saves those overrides to the existing private `config.env`, including secret values**, so future runs and `--changed` use the same settings. Overrides need an existing `config.env` (bootstrap, the wizard, or `cp config.env.example config.env`); with `--all`/`-y` and no `config.env`, `install.sh` stops before saving anything. Bootstrap seeds a new config; help/list/status are read-only. Values inherited from a parent dotfiles process, values equal to the ones in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to `~/.config/dotfiles/projects_dir` are not treated as overrides ([details](10-reference.md#configenv)). To change or clear a value, edit `config.env` or use the wizard:
+3. **Environment variable overrides (ideal for automation, cloud-init, and forks):** Nonempty exported `config.env` keys take precedence over the file. After validation (and before sudo escalation) the installer **saves those overrides to the existing private `config.env`, including secret values**, so future runs and `--changed` use the same settings. Overrides need an existing `config.env` (bootstrap, the wizard, or `cp config.env.example config.env`); with `--all`/`-y` and no `config.env`, `install.sh` stops before saving anything. Bootstrap seeds a new config; help/list/status are read-only. Values inherited from a parent AgentReady process, values equal to the ones in `~/.config/secrets.env`, and a `PROJECTS_DIR` equal to `~/.config/dotfiles/projects_dir` are not treated as overrides ([details](10-reference.md#configenv)). To change or clear a value, edit `config.env` or use the wizard:
    ```bash
    # Bootstrap a custom fork and user non-interactively (as a non-root cloud user, e.g. ubuntu)
-   curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh \
-       | sudo env DOTFILES_REPO=https://github.com/you/dotfiles-cloud.git \
+   curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh \
+       | sudo env AGENT_READY_REPO=https://github.com/you/agent-ready.git \
            HERMES=false TIMEZONE=UTC bash -s -- --user deploy
 
    # Run server setup non-interactively with overrides
@@ -71,7 +71,7 @@ Stage 20 (`stages/20-security.sh`) has built-in lockout guards before disabling 
 For password-gated `sudo` and prompting agents on a server, set `FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true`, ideally at bootstrap (it seeds every nonempty key from its environment into the new `config.env`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh \
+curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh \
     | sudo env FULL_CONTROL=false DOCKER_SUDOLESS=false AGENT_SANDBOX=true bash -s -- --user deploy
 ```
 
@@ -138,6 +138,15 @@ Yes:
 ---
 
 ## Updates, re-runs, and uninstalling
+
+### How do I adopt AgentReady on an existing machine?
+
+Keep your existing `~/.dotfiles` checkout and operational paths in place. After
+the GitHub repository is renamed, update `origin`, pull, and run
+`./install.sh --changed`; see [the upgrade commands](12-maintenance.md#adopting-agentready).
+Update project-specific environment settings in shell startup files and
+automation to the documented `AGENT_READY_*` names. No compatibility aliases or
+directory moves are required or provided.
 
 ### What is the difference between `update-all`, `./install.sh --changed`, and `./install.sh --renew`?
 

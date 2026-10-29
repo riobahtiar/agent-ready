@@ -16,9 +16,9 @@
 # re-renders the vhost from ~/.dotfiles/nginx/templates.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/nginx.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
-source "$DOTFILES_DIR/lib/net.sh"
+source "$AGENT_READY_DIR/lib/nginx.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/net.sh"
 
 usage() {
     sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'

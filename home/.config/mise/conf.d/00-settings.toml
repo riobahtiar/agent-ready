@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/00-settings.toml) — global mise settings.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/00-settings.toml) — global mise settings.
 #
 # Everything this repo gives mise lives in conf.d/, one group per file, so
 # adding or retiring a tool is a one-line change (docs/06-tools-and-agents.md):

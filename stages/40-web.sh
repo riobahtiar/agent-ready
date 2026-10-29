@@ -5,8 +5,8 @@
 # stage-inputs: nginx
 # stage-desc: nginx + certbot (webroot), php-fpm + composer — host mini projects with `site add`
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/nginx.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/nginx.sh"
 load_config
 
 log "nginx + certbot"
@@ -32,11 +32,11 @@ if as_root test -L "$default_site"; then
         warn "kept sites-enabled/default: it was edited (serves something besides the welcome page)"
     fi
 fi
-install_file "$DOTFILES_DIR/nginx/cloud.conf" /etc/nginx/conf.d/cloud.conf
-for snippet in "$DOTFILES_DIR"/nginx/snippets/*.conf; do
+install_file "$AGENT_READY_DIR/nginx/cloud.conf" /etc/nginx/conf.d/cloud.conf
+for snippet in "$AGENT_READY_DIR"/nginx/snippets/*.conf; do
     install_file "$snippet" "/etc/nginx/snippets/$(basename "$snippet")"
 done
-install_file "$DOTFILES_DIR/nginx/default.conf" /etc/nginx/sites-available/00-default.conf
+install_file "$AGENT_READY_DIR/nginx/default.conf" /etc/nginx/sites-available/00-default.conf
 as_root ln -sfn /etc/nginx/sites-available/00-default.conf /etc/nginx/sites-enabled/00-default.conf
 
 if ! test_out="$(as_root nginx -t 2>&1)"; then
@@ -53,7 +53,7 @@ nginx_reload
 ok "$(nginx -v 2>&1)"
 
 # Renewals run from certbot.timer; reload nginx so new certs are picked up.
-install_file "$DOTFILES_DIR/system/certbot-reload-nginx.sh" /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh 0755
+install_file "$AGENT_READY_DIR/system/certbot-reload-nginx.sh" /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh 0755
 as_root systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 
 if is_true "$PHP"; then
@@ -65,7 +65,7 @@ if is_true "$PHP"; then
     php_ver="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
     for sapi in fpm cli; do
         [[ -d /etc/php/$php_ver/$sapi/conf.d ]] &&
-            install_file "$DOTFILES_DIR/system/php.ini" "/etc/php/$php_ver/$sapi/conf.d/90-cloud.ini"
+            install_file "$AGENT_READY_DIR/system/php.ini" "/etc/php/$php_ver/$sapi/conf.d/90-cloud.ini"
     done
     as_root systemctl enable --now "php$php_ver-fpm" >/dev/null 2>&1
     as_root systemctl restart "php$php_ver-fpm"

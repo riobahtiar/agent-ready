@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/60-network.toml) — dev tunnels
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/60-network.toml) — dev tunnels
 # used by `tunnel` (tunnels.d/). Tailscale is a system service (stage 75).
 [tools]
 cloudflared = "latest"

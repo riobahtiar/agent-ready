@@ -1,4 +1,6 @@
-# Daily workflow
+# Daily workflow with AI coding agents
+
+Use your AgentReady environment for remote development, agent worktrees, and app previews.
 
 ## Connect
 

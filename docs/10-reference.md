@@ -1,4 +1,4 @@
-# Reference
+# AgentReady configuration, environment variables, and stage APIs
 
 ## config.env
 
@@ -23,8 +23,8 @@ seeds every nonempty key into a new `config.env`.
 
 Values that are not your explicit choice are **not** treated as overrides:
 
-- anything inherited from a parent dotfiles process (`load_config` exports
-  `DOTFILES_CONFIG_LOADED=1`), so `install.sh` relaunched after the wizard or from
+- anything inherited from a parent AgentReady process (`load_config` exports
+  `AGENT_READY_CONFIG_LOADED=1`), so `install.sh` relaunched after the wizard or from
   `vps` reads `config.env` fresh;
 - a key whose environment value equals its value in `~/.config/secrets.env`
   (your login shell exports that file);
@@ -47,7 +47,7 @@ machine command, so all of their child processes can read it.
 | `TIMEZONE`, `LOCALE` | UTC, en_US.UTF-8 | 10 |
 | `HOSTNAME_FQDN` | keep | 10 |
 | `LOGIN_SHELL` | fish | 05 |
-| `LOGIN_GREETING` | true | 10 (server): only toggles Ubuntu's own login messages — update-motd scripts (dpkg-statoverride), motd-news (and its timer, masked) and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login". `bin/motd` runs on every SSH login shell regardless, unless `CLOUD_GREETING=off` |
+| `LOGIN_GREETING` | true | 10 (server): only toggles Ubuntu's own login messages — update-motd scripts (dpkg-statoverride), motd-news (and its timer, masked) and the provider's `/etc/motd` (backed up to `/etc/motd.dotfiles-orig`) off; `wtmpdb` for "Last login". `bin/motd` runs on every SSH login shell regardless, unless `AGENT_READY_GREETING=off` |
 | `CLOUD_INIT_LOCK` | true | 10 (server): `/etc/cloud/cloud-init.disabled` after first boot, so provider boot commands stop |
 | `SWAP_SIZE_GB`, `ZRAM` | 4, true | 10 (server) |
 | `SSH_HARDEN`, `SSH_DISABLE_ROOT`, `OPEN_MOSH` | true, true, false | 20 (server); `SSH_HARDEN=force` skips the "key login seen" check |
@@ -76,16 +76,20 @@ Additional environment knobs:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DOTFILES_REPO` | `https://github.com/riobahtiar/dotfiles-cloud.git` | `bootstrap.sh`: repository URL to clone (`--repo`) |
-| `DOTFILES_BRANCH` | `main` | `bootstrap.sh`: branch to clone (`--branch`) |
+| `AGENT_READY_DIR` | resolved checkout root | Shared helpers and commands locate repository files here; the conventional checkout is `~/.dotfiles` |
+| `AGENT_READY_REPO` | `https://github.com/riobahtiar/agent-ready.git` | `bootstrap.sh`: repository URL to clone (`--repo`) |
+| `AGENT_READY_BRANCH` | `main` | `bootstrap.sh`: branch to clone (`--branch`) |
 | `BOOTSTRAP_INSTALL` | `0` | `bootstrap.sh`: set to `1` to run `setup-server.sh` immediately (`--install`) |
-| `DOTFILES_CONFIG` | `~/.dotfiles/config.env` | Path to an alternate `config.env` file |
+| `AGENT_READY_CONFIG` | `~/.dotfiles/config.env` | Path to an alternate `config.env` file |
 | `ASSUME_YES` | `0` | Set to `1` for non-interactive confirmation (`-y` / `--yes`) |
-| `CLOUD_UI` | auto | Set to `plain` to force numbered prompts instead of `gum` |
+| `AGENT_READY_UI` | auto | Set to `plain` to force numbered prompts instead of `gum` |
 | `HERMES_RESET_PASSWORD` | `0` | Set to `1` with `./install.sh hermes` to prompt for a new dashboard password |
 | `SANDBOX_IMAGE` | `mcr.microsoft.com/devcontainers/base:ubuntu` | Default container image for `sandbox box` |
 | `SANDBOX_CPUS` | `min(2, host_cpus)` | CPU limit for `sandbox box` |
 | `SANDBOX_MEMORY` | `2g` | Memory limit for `sandbox box` |
+| `AGENT_READY_PROMPT_RIGHT` | `status duration jobs worktree node bun go php python flutter docker` | Fish right-prompt section order; see [04 Shell and prompt](04-shell-and-prompt.md) |
+| `AGENT_READY_PROMPT_SLOW_MS` | `3000` | Minimum command duration in milliseconds for the fish right prompt |
+| `AGENT_READY_GREETING` | `status` in fish; SSH summary in bash | Set to `off` to disable the SSH login summary; fish also accepts `eel` for the theme greeting |
 
 ## Secrets: where they live
 
@@ -137,7 +141,7 @@ docs/                  these guides
 ```
 
 A stage is **changed** when the digest of its inputs differs from its last
-successful run: the stage file, every `$DOTFILES_DIR/…` path it mentions,
+successful run: the stage file, every `$AGENT_READY_DIR/…` path it mentions,
 `lib/*.sh`, config.env and `stage-inputs`. State lives in `.state/stages/<name>`.
 
 ## Module APIs

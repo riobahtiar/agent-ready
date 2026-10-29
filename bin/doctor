@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# doctor — one-screen health check for this machine.
+# doctor — AgentReady one-screen health check for this machine.
 #   doctor           full report
 #   doctor --brief   services, resources and exposure only (used at the end of install.sh)
 # Exposure (listening ports) and Certificates run on the server profile only.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
 
 BRIEF=0
 for arg in "$@"; do
     case $arg in
     -h | --help)
-        printf 'Usage: doctor [--brief]\n\nReport machine health; --brief shows services, resources and exposure only.\nExposure and Certificates sections: server profile only.\n'
+        printf 'Usage: doctor [--brief]\n\nReport AgentReady machine health; --brief shows services, resources and exposure only.\nExposure and Certificates sections: server profile only.\n'
         exit 0
         ;;
     --brief) BRIEF=1 ;;
@@ -30,7 +30,7 @@ section() { printf '\n%s%s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
 # sudo without prompting; empty output when not allowed.
 nsudo() { if is_root; then "$@"; else sudo -n "$@" 2>/dev/null; fi; }
 
-section "System — $(hostname) · $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' (WSL)') · $(uname -r) · profile $PROFILE"
+section "AgentReady · System — $(hostname) · $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo ' (WSL)') · $(uname -r) · profile $PROFILE"
 if [[ $OS_KIND == linux ]]; then
     read -r load1 _ </proc/loadavg
     cores="$(nproc)"
@@ -159,7 +159,7 @@ if ((! BRIEF)); then
     section "Disk hogs"
     du -sh "$HOME/.cache" "$HOME/.local/share/mise" "$HOME/.claude" "$HOME/.codex" "$HOME/.hermes" "$PROJECTS_DIR" 2>/dev/null | sort -rh | sed 's/^/  /'
     have docker && docker system df 2>/dev/null | sed 's/^/  /'
-    [[ -d $DOTFILES_DIR/.git ]] && [[ -n $(git -C "$DOTFILES_DIR" status --porcelain) ]] &&
+    [[ -d $AGENT_READY_DIR/.git ]] && [[ -n $(git -C "$AGENT_READY_DIR" status --porcelain) ]] &&
         meh "~/.dotfiles has uncommitted changes (an installer may have edited a linked file)"
 fi
 

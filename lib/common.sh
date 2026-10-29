@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# Shared helpers for install.sh, stages/*.sh and bin/*. Source it, don't run it.
+# AgentReady shared helpers for install.sh, stages/*.sh and bin/*. Source it, don't run it.
 # Everything here must be idempotent and safe to source more than once.
 
-[[ -n ${__CLOUD_COMMON_LOADED:-} ]] && return 0
-__CLOUD_COMMON_LOADED=1
+[[ -n ${__AGENT_READY_COMMON_LOADED:-} ]] && return 0
+__AGENT_READY_COMMON_LOADED=1
 
 # bash ≥ 4 for every command, also when /bin/bash (3.2) comes first on macOS's
 # PATH: re-exec the calling script with Homebrew's bash. (Plain 3.2 syntax up
@@ -16,10 +16,10 @@ if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
     exit 1
 fi
 
-DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
-export DOTFILES_DIR
+AGENT_READY_DIR="${AGENT_READY_DIR:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)}"
+export AGENT_READY_DIR
 # shellcheck source=lib/os.sh
-source "$DOTFILES_DIR/lib/os.sh"
+source "$AGENT_READY_DIR/lib/os.sh"
 # Flutter publishes no linux-arm64 SDK: don't let mise fail on it forever.
 if [[ $OS_KIND == linux && $(uname -m) == aarch64 && ${MISE_DISABLE_TOOLS:-} != *flutter* ]]; then
     export MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}flutter"
@@ -131,12 +131,12 @@ CONFIG_KEYS=(
 declare -A CONFIG_ENV_OVERRIDES=()
 # Called once at the end of this file (it needs env_get). Only what the caller
 # typed counts as an override, never values the environment merely carries:
-# - a parent that ran load_config exported its config (DOTFILES_CONFIG_LOADED),
+# - a parent that ran load_config exported its config (AGENT_READY_CONFIG_LOADED),
 #   and a wizard-edited config.env must win over those stale exports;
 # - the login shell exports ~/.config/secrets.env and PROJECTS_DIR from
 #   ~/.config/dotfiles/projects_dir, so those would pin config.env forever.
 config_snapshot_env() {
-    [[ -n ${DOTFILES_CONFIG_LOADED:-} ]] && return 0
+    [[ -n ${AGENT_READY_CONFIG_LOADED:-} ]] && return 0
     local key value projects_dir='' exported
     exported=" $(compgen -e | tr '\n' ' ') "
     [[ -r $HOME/.config/dotfiles/projects_dir ]] && { IFS= read -r projects_dir <"$HOME/.config/dotfiles/projects_dir" || true; }
@@ -159,7 +159,7 @@ config_is_secret() {
 }
 
 load_config() {
-    local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    local file="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
     local __k
 
     # Not `set -a`: config.env holds tokens (Telegram, Tailscale, GitHub), and
@@ -176,7 +176,7 @@ load_config() {
             TARGET_USER="${SUDO_USER:-}"
             if [[ -z $TARGET_USER ]]; then
                 local repo_owner
-                repo_owner="$(os_owner "$DOTFILES_DIR")"
+                repo_owner="$(os_owner "$AGENT_READY_DIR")"
                 repo_owner=${repo_owner%%:*}
                 [[ -n $repo_owner && $repo_owner != root ]] && TARGET_USER=$repo_owner
             fi
@@ -270,9 +270,9 @@ load_config() {
         export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"
     fi
 
-    # DOTFILES_CONFIG_LOADED: child dotfiles commands mustn't take these
+    # AGENT_READY_CONFIG_LOADED: child AgentReady commands mustn't take these
     # exports for caller overrides (config_snapshot_env).
-    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE DOTFILES_CONFIG_LOADED=1
+    export TARGET_USER TARGET_HOME PROJECTS_DIR WWW_DIR PROFILE AGENT_READY_CONFIG_LOADED=1
     # Non-secret settings follow root stages and clean user-side stage launches.
     for __k in "${CONFIG_KEYS[@]}"; do
         config_is_secret "$__k" || { [[ -v $__k ]] && export "$__k=${!__k}"; }
@@ -301,7 +301,7 @@ run_as_user() {
         SHELL=/bin/bash TERM="${TERM:-xterm-256color}" LANG="${LANG:-C.UTF-8}" \
         PATH="$TARGET_HOME/.local/bin:$TARGET_HOME/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         XDG_RUNTIME_DIR="/run/user/$uid" \
-        DOTFILES_DIR="$DOTFILES_DIR" DOTFILES_CONFIG="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}" \
+        AGENT_READY_DIR="$AGENT_READY_DIR" AGENT_READY_CONFIG="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}" \
         ASSUME_YES="${ASSUME_YES:-0}" RENEW="${RENEW:-0}" PROFILE="${PROFILE:-}" \
         "${config_env[@]}" \
         "$@"
@@ -429,7 +429,7 @@ full_control_sudo() {
     fi
     [[ $user =~ ^[a-z_][a-z0-9_-]*$ ]] || die "full_control_sudo: bad user name '$user'"
     tmp="$(mktemp)"
-    printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$user" >"$tmp"
+    printf '# Managed by ~/.dotfiles (AgentReady; FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$user" >"$tmp"
     chmod 0440 "$tmp"
     if ! visudo -cf "$tmp" >/dev/null 2>&1; then
         rm -f "$tmp"

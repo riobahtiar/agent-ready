@@ -5,8 +5,8 @@
 # stage-inputs: agents.d
 # stage-desc: agent CLIs from agents.d/ (AGENTS in config.env), herdr hooks, shared machine AGENTS.md
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
 load_config
 
 export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.grok/bin:$HOME/.local/share/mise/shims:$PATH"
@@ -26,7 +26,7 @@ log "Shared machine guide → every agent's global instructions"
 # One file describes this box (RAM budget, ports, docker, hosting, cleanup) to
 # every agent. Project AGENTS.md / CLAUDE.md still take precedence. Done
 # before the herdr hooks: it creates ~/.codex etc., which herdr looks for.
-guide="$DOTFILES_DIR/agents/AGENTS.global.md"
+guide="$AGENT_READY_DIR/agents/AGENTS.global.md"
 for agent in "${AGENT_NAMES[@]}"; do
     target="$(agent_get "$agent" guide)"
     [[ $target != - ]] || continue

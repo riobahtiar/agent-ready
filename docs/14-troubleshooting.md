@@ -1,4 +1,4 @@
-# Troubleshooting
+# Troubleshoot AgentReady setup, SSH, developer tools, and desktop apps
 
 Start with `doctor` and `./install.sh --status`: most problems show up in one of them. For general questions, see [16 FAQ](16-faq.md).
 
@@ -31,6 +31,6 @@ Start with `doctor` and `./install.sh --status`: most problems show up in one of
 | wrangler login hangs on a VPS | Its callback is `localhost:8976`: `ssh -N -L 8976:127.0.0.1:8976 cloud` from the laptop first, or use `CLOUDFLARE_API_TOKEN` |
 | `zram module unavailable` | Install `linux-modules-extra-$(uname -r)`, then `./install.sh system` |
 | `~/.dotfiles` shows changes after an update | An installer edited a linked file: `git -C ~/.dotfiles diff`, keep what's useful |
-| A menu doesn't appear | Menus need a real terminal and no arguments. `CLOUD_UI=plain` swaps gum for numbered prompts |
+| A menu doesn't appear | Menus need a real terminal and no arguments. `AGENT_READY_UI=plain` swaps gum for numbered prompts |
 | Omarchy reset a config after `omarchy update` | `./install.sh dotfiles` re-links it (`--changed` only notices repo changes); linked files are listed in `home/` |
 | macOS: `install.sh needs bash 4+` | Install Homebrew; install.sh then installs bash and re-launches itself |

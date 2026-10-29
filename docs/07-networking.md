@@ -1,4 +1,4 @@
-# Networking: Tailscale and dev tunnels
+# Developer networking: Tailscale and app preview tunnels
 
 ## Tailscale
 

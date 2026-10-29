@@ -1,6 +1,6 @@
-# Contributing
+# Contributing to AgentReady
 
-Contributions that improve portability, reliability, security, or documentation are welcome. Before opening a pull request, read how the repository is structured and what invariants every change must keep.
+Help developers prepare their machines for AI coding agents. AgentReady welcomes contributions that improve portability, reliability, security, or documentation. Before opening a pull request, read how the repository is structured and what invariants every change must keep.
 
 ## Core Principles
 
@@ -43,7 +43,7 @@ Fish and Gitleaks checks run when those executables are available.
 
 Changes to `stages/`, `bootstrap.sh`, `nginx/templates/`, or `bin/cleanup` should be smoke-tested in a disposable container before submitting:
 
-- **Ubuntu LTS (systemd):** Launch an Ubuntu LTS container with `--privileged` and `/sbin/init`, copy the checkout into `/root/dotfiles-cloud` (avoid `/tmp`, which `systemd` mounts over), bootstrap a test user, and run `./setup-server.sh --all -y` followed by `./setup-server.sh --changed -y` to verify idempotency.
+- **Ubuntu LTS (systemd):** Launch an Ubuntu LTS container with `--privileged` and `/sbin/init`, copy the checkout into `/root/agent-ready` (avoid `/tmp`, which `systemd` mounts over), bootstrap a test user, and run `./setup-server.sh --all -y` followed by `./setup-server.sh --changed -y` to verify idempotency.
 - **Arch Linux:** Test `pacman` package mapping and user stages in an `archlinux` container.
 - **Interactive menus:** Verify both TTY menu mode and flag-driven non-TTY mode (`--help`, missing-arg errors, `-y`).
 

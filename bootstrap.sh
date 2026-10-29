@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# bootstrap.sh — first contact with a fresh Linux server (Ubuntu/Debian, Arch, Fedora). Run as root.
+# bootstrap.sh — AgentReady first contact with a fresh Linux server (Ubuntu/Debian, Arch, Fedora). Run as root.
 # Laptops, WSL and macOS don't need it: clone the repo to ~/.dotfiles and run
 # ./setup-desktop.sh (or ./install.sh — see docs/08-multi-os.md).
 #
-#   curl -fsSL https://raw.githubusercontent.com/riobahtiar/dotfiles-cloud/main/bootstrap.sh | bash -s -- --user deploy
+#   curl -fsSL https://raw.githubusercontent.com/riobahtiar/agent-ready/main/bootstrap.sh | bash -s -- --user deploy
 #   # or, after copying the repo over:  sudo ./bootstrap.sh --user deploy
 #
 # What it does (and nothing more):
@@ -13,12 +13,12 @@
 #   4. with --install (or BOOTSTRAP_INSTALL=1), runs setup-server.sh straight away
 #
 # Options: --user NAME  --repo URL  --branch NAME  --install
-# Env:     TARGET_USER (or BOOTSTRAP_USER), DOTFILES_REPO, DOTFILES_BRANCH, BOOTSTRAP_INSTALL=1
+# Env:     TARGET_USER (or BOOTSTRAP_USER), AGENT_READY_REPO, AGENT_READY_BRANCH, BOOTSTRAP_INSTALL=1
 set -Eeuo pipefail
 
 TARGET_USER="${TARGET_USER:-${BOOTSTRAP_USER:-}}"
-REPO_URL="${DOTFILES_REPO:-https://github.com/riobahtiar/dotfiles-cloud.git}"
-BRANCH="${DOTFILES_BRANCH:-main}"
+REPO_URL="${AGENT_READY_REPO:-https://github.com/riobahtiar/agent-ready.git}"
+BRANCH="${AGENT_READY_BRANCH:-main}"
 RUN_INSTALL=0
 [[ ${BOOTSTRAP_INSTALL:-0} =~ ^([Tt]rue|[Yy]es|1|on)$ ]] && RUN_INSTALL=1
 
@@ -94,7 +94,7 @@ if id "$TARGET_USER" >/dev/null 2>&1 && [[ -d $(getent passwd "$TARGET_USER" | c
     say "Already bootstrapped ($TARGET_USER and ~/.dotfiles exist) — only updating the repo and keys"
 fi
 
-say "Installing bootstrap packages"
+say "AgentReady: installing bootstrap packages"
 admin_group=sudo
 case " $ID ${ID_LIKE:-} " in
 *" debian "* | *" ubuntu "*)
@@ -157,38 +157,38 @@ if [[ -n $usable_keys ]]; then
     say "Copied SSH keys to $TARGET_USER"
 fi
 
-DOTFILES_DIR="$TARGET_HOME/.dotfiles"
-if [[ -d $DOTFILES_DIR/.git ]]; then
-    say "Updating $DOTFILES_DIR"
-    runuser -u "$TARGET_USER" -- git -C "$DOTFILES_DIR" pull --ff-only || echo "warning: git pull failed — continuing with local copy" >&2
-elif [[ -f "$(dirname "$(readlink -f "$0")")/install.sh" && $(dirname "$(readlink -f "$0")") != "$DOTFILES_DIR" ]]; then
-    say "Copying local repo to $DOTFILES_DIR"
-    cp -a "$(dirname "$(readlink -f "$0")")" "$DOTFILES_DIR"
+AGENT_READY_DIR="$TARGET_HOME/.dotfiles"
+if [[ -d $AGENT_READY_DIR/.git ]]; then
+    say "Updating $AGENT_READY_DIR"
+    runuser -u "$TARGET_USER" -- git -C "$AGENT_READY_DIR" pull --ff-only || echo "warning: git pull failed — continuing with local copy" >&2
+elif [[ -f "$(dirname "$(readlink -f "$0")")/install.sh" && $(dirname "$(readlink -f "$0")") != "$AGENT_READY_DIR" ]]; then
+    say "Copying local repo to $AGENT_READY_DIR"
+    cp -a "$(dirname "$(readlink -f "$0")")" "$AGENT_READY_DIR"
     # A copy from another machine carries that machine's run state and profile.
-    rm -rf "$DOTFILES_DIR/.state"
-    if [[ -f $DOTFILES_DIR/config.env ]] && grep -qE "^PROFILE=['\"]?(desktop|workstation)" "$DOTFILES_DIR/config.env"; then
-        sed -i "s/^PROFILE=.*/PROFILE=/" "$DOTFILES_DIR/config.env"
+    rm -rf "$AGENT_READY_DIR/.state"
+    if [[ -f $AGENT_READY_DIR/config.env ]] && grep -qE "^PROFILE=['\"]?(desktop|workstation)" "$AGENT_READY_DIR/config.env"; then
+        sed -i "s/^PROFILE=.*/PROFILE=/" "$AGENT_READY_DIR/config.env"
         echo "note: the copied config.env said PROFILE=desktop — cleared it (this is a server)" >&2
     fi
-    chown -R "$TARGET_USER:$TARGET_USER" "$DOTFILES_DIR"
+    chown -R "$TARGET_USER:$TARGET_USER" "$AGENT_READY_DIR"
 else
     say "Cloning $REPO_URL"
-    runuser -u "$TARGET_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$DOTFILES_DIR"
+    runuser -u "$TARGET_USER" -- git clone --branch "$BRANCH" "$REPO_URL" "$AGENT_READY_DIR"
 fi
 
 # Reuse the private, same-directory atomic writer under the config owner's uid.
 # shellcheck source=lib/common.sh
-source "$DOTFILES_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
 # shellcheck source=lib/configure.sh
-source "$DOTFILES_DIR/lib/configure.sh"
+source "$AGENT_READY_DIR/lib/configure.sh"
 
-if [[ ! -f $DOTFILES_DIR/config.env ]]; then
-    runuser -u "$TARGET_USER" -- install -m 600 "$DOTFILES_DIR/config.env.example" "$DOTFILES_DIR/config.env"
-    config_set_owned "$DOTFILES_DIR/config.env" TARGET_USER "$TARGET_USER"
+if [[ ! -f $AGENT_READY_DIR/config.env ]]; then
+    runuser -u "$TARGET_USER" -- install -m 600 "$AGENT_READY_DIR/config.env.example" "$AGENT_READY_DIR/config.env"
+    config_set_owned "$AGENT_READY_DIR/config.env" TARGET_USER "$TARGET_USER"
     for k in "${CONFIG_KEYS[@]}"; do
-        [[ -n ${!k:-} ]] && config_set_owned "$DOTFILES_DIR/config.env" "$k" "${!k}"
+        [[ -n ${!k:-} ]] && config_set_owned "$AGENT_READY_DIR/config.env" "$k" "${!k}"
     done
-    say "Created $DOTFILES_DIR/config.env"
+    say "Created $AGENT_READY_DIR/config.env"
 fi
 
 # Unattended mode (FULL_CONTROL in config.env, on by default on servers):
@@ -196,9 +196,9 @@ fi
 # mirror is_true; empty means the server default (on). Validated with
 # visudo; a broken file would lock sudo.
 full_control_rule=/etc/sudoers.d/90-dotfiles-full-control
-if grep -qE "^FULL_CONTROL=(['\"]?([Tt]rue|[Yy]es|1|on)['\"]?|['\"]{0,2})[[:space:]]*(#|$)" "$DOTFILES_DIR/config.env" 2>/dev/null; then
+if grep -qE "^FULL_CONTROL=(['\"]?([Tt]rue|[Yy]es|1|on)['\"]?|['\"]{0,2})[[:space:]]*(#|$)" "$AGENT_READY_DIR/config.env" 2>/dev/null; then
     rule="$(mktemp)"
-    printf '# Managed by ~/.dotfiles (FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$TARGET_USER" >"$rule"
+    printf '# Managed by ~/.dotfiles (AgentReady; FULL_CONTROL=true in config.env)\n%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "$TARGET_USER" >"$rule"
     chmod 0440 "$rule"
     if visudo -cf "$rule" >/dev/null 2>&1; then
         install -m 0440 -o root -g root "$rule" "$full_control_rule"
@@ -231,14 +231,14 @@ if ((RUN_INSTALL)); then
         exit 1
     fi
     if { : </dev/tty; } 2>/dev/null; then
-        exec "$DOTFILES_DIR/setup-server.sh" </dev/tty
+        exec "$AGENT_READY_DIR/setup-server.sh" </dev/tty
     fi
-    exec "$DOTFILES_DIR/setup-server.sh"
+    exec "$AGENT_READY_DIR/setup-server.sh"
 fi
 
 cat <<EOF
 
-Bootstrap complete. Next, from your machine in a NEW terminal:
+AgentReady bootstrap complete. Next, from your machine in a NEW terminal:
   ssh $TARGET_USER@<host>
   ~/.dotfiles/setup-server.sh      # asks for your settings, then installs
 Keep this root session open until you have confirmed 'ssh $TARGET_USER@<host>' works.

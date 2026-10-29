@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/20-languages.toml) — LSPs, linters, compilers.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/20-languages.toml) — LSPs, linters, compilers.
 [tools]
 "go:golang.org/x/tools/gopls" = "latest"
 golangci-lint = "latest"

@@ -1,7 +1,7 @@
-# Multi-OS: server and desktop
+# macOS and Linux setup for AI coding agents
 
-One repo sets up two kinds of machine. The **profile** decides what's worth
-installing, and each stage's OS rule decides what's possible.
+AgentReady sets up server and desktop developer environments. The **profile**
+decides what's worth installing, and each stage's OS rule decides what's possible.
 
 | | `server` | `desktop` |
 |---|---|---|
@@ -52,7 +52,7 @@ on Linux), and macOS casks install with `--adopt`, so an app already in
 
 ```bash
 # Homebrew first: https://brew.sh
-git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
+git clone https://github.com/riobahtiar/agent-ready ~/.dotfiles
 ~/.dotfiles/setup-desktop.sh
 ```
 
@@ -79,7 +79,7 @@ opinions, and this setup is built to sit alongside them:
 | updates via `omarchy update` | `update-all` covers what this repo installed; run both |
 
 ```bash
-git clone https://github.com/riobahtiar/dotfiles-cloud ~/.dotfiles
+git clone https://github.com/riobahtiar/agent-ready ~/.dotfiles
 ~/.dotfiles/setup-desktop.sh
 ```
 

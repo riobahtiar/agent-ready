@@ -1,4 +1,4 @@
-# Sandboxing agents and untrusted code
+# Sandbox AI coding agents and untrusted development commands
 
 Agents run shell commands, often in bypass mode, on a machine that holds your
 SSH keys, cloud tokens and the Hermes `.env`. Sandboxing shrinks what a bad

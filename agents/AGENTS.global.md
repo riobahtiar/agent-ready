@@ -1,7 +1,7 @@
-# This machine
+# AgentReady — this machine's coding agent environment
 
-Global instructions for every coding agent on this box (Claude Code, Codex,
-OpenCode, omp, Grok, Muse, Hermes). Linked from `~/.dotfiles/agents/AGENTS.global.md`.
+Global instructions for every coding agent on this AgentReady-configured machine (Claude Code, Codex,
+OpenCode, omp, Grok, Muse, Hermes). Linked from the stable path `~/.dotfiles/agents/AGENTS.global.md`.
 A project's own AGENTS.md / CLAUDE.md overrides this file.
 
 This file applies to server and desktop profiles, including Linux, macOS and

@@ -1,6 +1,6 @@
-# What gets installed where
+# Installed developer tools and desktop apps on Ubuntu, Arch, and macOS
 
-Three reference environments, one repository. Headless Linux servers use the
+Three reference environments, one AgentReady repository. Headless Linux servers use the
 **server** profile (`./setup-server.sh`, **tested on the latest Ubuntu LTS**);
 Omarchy/Arch and macOS machines use the **desktop** profile
 (`./setup-desktop.sh`). The rules behind each row are in

@@ -4,8 +4,8 @@
 # stage-profile: all
 # stage-desc: base packages (apt · pacman · dnf · brew), mise, fish as login shell, ~/projects
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
 load_config
 
 log "Packages on $OS_PRETTY$([[ $IS_WSL == 1 ]] && echo " (WSL)")"

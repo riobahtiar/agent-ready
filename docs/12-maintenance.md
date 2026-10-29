@@ -1,4 +1,29 @@
-# Maintenance
+# AgentReady maintenance, upgrades, and cleanup
+
+## Adopting AgentReady
+
+After the GitHub repository has been renamed to AgentReady, update your existing
+checkout's remote and apply changed stages:
+
+```bash
+cd ~/.dotfiles
+git remote set-url origin https://github.com/riobahtiar/agent-ready.git
+git pull
+./install.sh --changed
+```
+
+Keep `~/.dotfiles`, `~/.dotfiles-backup`, `.state`, `~/.config/dotfiles`, and
+`~/.local/state/dotfiles` in place. These conventional paths, the `fish/cloud`
+directory, `cloud-cleanup` services, and managed system fragment names remain
+stable deliberately; adopting AgentReady requires no file or directory move.
+The dashboard command remains `vps`.
+
+Update project-specific settings in shell startup files and automation to use
+the `AGENT_READY_*` names in [the environment reference](10-reference.md).
+Only the new names are supported; there are no compatibility aliases.
+`CLOUD_INIT_LOCK` remains unchanged because it controls cloud-init, not the
+AgentReady brand. Start a new login shell after applying the stages to load the
+updated shell configuration.
 
 ## The routine
 

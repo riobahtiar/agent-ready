@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/47-delivery.toml) — tools for
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/47-delivery.toml) — tools for
 # shipping: test APIs, inspect data, keep secrets encrypted, scan before release.
 [tools]
 # API / performance

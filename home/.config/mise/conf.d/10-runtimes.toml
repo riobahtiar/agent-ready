@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/10-runtimes.toml) — language runtimes.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/10-runtimes.toml) — language runtimes.
 [tools]
 node = "lts"
 bun = "latest"

@@ -1,4 +1,4 @@
-# Changelog
+# AgentReady changelog
 
 ## Unreleased
 
@@ -11,6 +11,8 @@
 
 ### Changed
 
+- Introduced AgentReady — Developer Environments for AI Coding Agents, with updated setup guides, discoverable project descriptions, GitHub topics, and canonical `riobahtiar/agent-ready` links.
+- Moved project-specific environment controls and internal shell helpers to the `AGENT_READY_*` / `__agent_ready_*` namespaces. Existing `~/.dotfiles` installations, service names, state directories, backups, and the cloud-init setting remain unchanged; custom automation should use the newly documented environment names.
 - Replaced machine-specific names, private links, and personal system assumptions with configurable settings and documentation-safe examples.
 - Documented the recorded Ubuntu LTS container verification and unverified desktop-platform limitations separately.
 - Added source-verified Docker loopback defaults for newly created user-defined bridge networks, explicit localhost Compose examples, and existing-network/older-engine caveats.

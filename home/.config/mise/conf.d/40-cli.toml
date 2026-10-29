@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/40-cli.toml) — modern CLI.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/40-cli.toml) — modern CLI.
 # Agents lean on these: fast search, structured edits, JSON.
 [tools]
 ripgrep = "latest"

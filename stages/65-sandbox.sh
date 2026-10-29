@@ -5,8 +5,8 @@
 # stage-inputs: home/.srt-settings.json
 # stage-desc: agent sandboxing: bubblewrap + socat (Claude Code /sandbox, srt), AppArmor userns profile, srt policy
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
 load_config
 
 bwrap_works() { run_as_user bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true >/dev/null 2>&1; }
@@ -31,7 +31,7 @@ else
             as_root apparmor_parser -r "$distro" || warn "apparmor_parser rejected $distro"
         else
             log "AppArmor: allow user namespaces for bwrap only"
-            install_file "$DOTFILES_DIR/system/apparmor-bwrap" /etc/apparmor.d/dotfiles-bwrap
+            install_file "$AGENT_READY_DIR/system/apparmor-bwrap" /etc/apparmor.d/dotfiles-bwrap
             as_root apparmor_parser -r /etc/apparmor.d/dotfiles-bwrap || warn "apparmor_parser rejected the profile"
         fi
     fi

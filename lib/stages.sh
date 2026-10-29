@@ -9,12 +9,12 @@
 #   # stage-inputs: dir …          optional: extra repo paths whose changes mean "re-apply me"
 #
 # After a stage succeeds, install.sh records a digest of its inputs (the stage
-# file, every $DOTFILES_DIR/… path it names, lib/, config.env and its
+# file, every $AGENT_READY_DIR/… path it names, lib/, config.env and its
 # stage-inputs) in .state/stages/<name>. A different digest = "changed".
 
-STAGE_STATE_DIR="$DOTFILES_DIR/.state/stages"
+STAGE_STATE_DIR="$AGENT_READY_DIR/.state/stages"
 
-stage_files() { printf '%s\n' "$DOTFILES_DIR"/stages/[0-9]*.sh; }
+stage_files() { printf '%s\n' "$AGENT_READY_DIR"/stages/[0-9]*.sh; }
 stage_name() { basename "$1" .sh; }
 _stage_header() { sed -n "s/^# stage-$2: *//p" "$1" | head -1; }
 stage_user() { _stage_header "$1" user; }
@@ -54,18 +54,18 @@ stage_applies() { [[ -z $(stage_skip_reason "$1") ]]; }
 
 stage_hash() {
     local f=$1 p
-    local -a inputs=("$f" "$DOTFILES_DIR"/lib/*.sh "${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}")
+    local -a inputs=("$f" "$AGENT_READY_DIR"/lib/*.sh "${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}")
     while read -r p; do
         [[ -n $p ]] || continue
-        p="$DOTFILES_DIR/${p#\$DOTFILES_DIR/}"
+        p="$AGENT_READY_DIR/${p#\$AGENT_READY_DIR/}"
         if [[ -d $p ]]; then
             while IFS= read -r -d '' x; do inputs+=("$x"); done < <(find "$p" -type f -print0 | sort -z)
         elif [[ -f $p ]]; then
             inputs+=("$p")
         fi
     done < <({
-        grep -oE '\$DOTFILES_DIR/[A-Za-z0-9_./-]+' "$f"
-        for p in $(_stage_header "$f" inputs); do echo "\$DOTFILES_DIR/$p"; done
+        grep -oE '\$AGENT_READY_DIR/[A-Za-z0-9_./-]+' "$f"
+        for p in $(_stage_header "$f" inputs); do echo "\$AGENT_READY_DIR/$p"; done
     } | sort -u)
     os_sha256 "${inputs[@]}"
 }
@@ -77,7 +77,7 @@ stage_last() { cat "$STAGE_STATE_DIR/$(stage_name "$1")" 2>/dev/null || true; }
 # would follow a planted symlink (.state/stages → /etc/sudoers.d).
 stage_mark() {
     local f=$1 rev line
-    rev="$(git -C "$DOTFILES_DIR" rev-parse --short HEAD 2>/dev/null || echo -)"
+    rev="$(git -C "$AGENT_READY_DIR" rev-parse --short HEAD 2>/dev/null || echo -)"
     line="$(date -u '+%Y-%m-%dT%H:%MZ') $rev $(stage_hash "$f")"
     printf '%s\n' "$line" | run_as_user bash -c 'mkdir -p "$1" && cat >"$1/$2"' _ "$STAGE_STATE_DIR" "$(stage_name "$f")"
 }

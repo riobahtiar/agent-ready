@@ -1,15 +1,15 @@
-# Commands
+# AgentReady commands and automation reference
 
-These user commands live in `~/.dotfiles/bin` (on PATH in fish, bash and agents'
+These user commands live in the stable `~/.dotfiles/bin` path (on PATH in fish, bash and agents'
 subshells). Commands with interactive menus show them when run bare at a
 terminal (gum when installed, numbered prompts otherwise); status and utility
 commands such as `doctor`, `motd`, and `notify` use their documented defaults.
 Without a TTY, commands do not wait for interactive input: provide the required
 arguments and confirmation flags. `<cmd> -h` or `<cmd> --help` prints usage.
 
-## vps — the hub
+## vps — the AgentReady dashboard
 
-`vps` opens one menu: health, updates, cleanup, sites, agents, Hermes, tunnels,
+`vps` opens AgentReady's menu: health, updates, cleanup, sites, agents, Hermes, tunnels,
 sandbox, cloud sign-ins, logs, settings and these guides (`vps docs`). Every
 entry prints the real command before running it, so you pick up the direct form.
 
@@ -145,7 +145,7 @@ hermes-up status
 motd               # print the server/system health summary any time
 ```
 
-Runs automatically on every SSH login shell unless `CLOUD_GREETING=off` (showing
+Runs automatically on every SSH login shell unless `AGENT_READY_GREETING=off` (showing
 last login, uptime, pending updates, load, memory/swap, disk, Docker containers,
 running agents, fail2ban, and ufw status). `LOGIN_GREETING` only toggles
 Ubuntu's own login messages.
@@ -172,7 +172,7 @@ also be passed as an exported environment variable override (e.g.
 `HERMES=false TIMEZONE=UTC ./setup-server.sh --all -y`); this needs an existing
 `config.env`. Installation runs save validated nonempty overrides to private
 `config.env`; read-only `--status`/`--list`/`--help` do not. Values inherited
-from a parent dotfiles process, matching `~/.config/secrets.env`, or the
+from a parent AgentReady process, matching `~/.config/secrets.env`, or the
 shell's exported `PROJECTS_DIR` are not overrides: edit `config.env` or run
 `./install.sh --configure`. See [10 Reference](10-reference.md#configenv).
 Modes don't combine: pass stage names *or* one of `--all`/`--changed`/`--renew`.

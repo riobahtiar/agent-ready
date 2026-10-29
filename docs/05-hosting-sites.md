@@ -1,4 +1,4 @@
-# Hosting sites (server profile)
+# Host apps with nginx and TLS on an AgentReady server
 
 nginx is the only public entry point (ports 80/443). Apps listen on
 `127.0.0.1:<port>`, and `site` writes a vhost and gets a Let's Encrypt

@@ -38,14 +38,14 @@ config_set_owned() {
         printf '%s\0%s\0%s\0' "$file" "$key" "$value" |
             runuser -u "$owner" -- env -i HOME="$owner_home" USER="$owner" LOGNAME="$owner" PATH=/usr/local/bin:/usr/bin:/bin "$BASH" -c '
                 set -Eeuo pipefail
-                DOTFILES_DIR=$1
-                source "$DOTFILES_DIR/lib/common.sh"
-                source "$DOTFILES_DIR/lib/configure.sh"
+                AGENT_READY_DIR=$1
+                source "$AGENT_READY_DIR/lib/common.sh"
+                source "$AGENT_READY_DIR/lib/configure.sh"
                 IFS= read -r -d "" file
                 IFS= read -r -d "" key
                 IFS= read -r -d "" value
                 config_set "$file" "$key" "$value"
-            ' bash "$DOTFILES_DIR"
+            ' bash "$AGENT_READY_DIR"
     else
         config_set "$file" "$key" "$value"
     fi
@@ -79,14 +79,14 @@ _ask_secret() {
 }
 
 configure_wizard() {
-    CONFIG_FILE="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    CONFIG_FILE="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
     if [[ ! -f $CONFIG_FILE ]]; then
-        cp "$DOTFILES_DIR/config.env.example" "$CONFIG_FILE"
+        cp "$AGENT_READY_DIR/config.env.example" "$CONFIG_FILE"
     fi
     chmod 600 "$CONFIG_FILE"
 
     local v toggles picked item
-    ui_title "Machine settings → ${CONFIG_FILE/#$HOME/\~}   (Enter keeps the shown value)"
+    ui_title "AgentReady settings → ${CONFIG_FILE/#$HOME/\~}   (Enter keeps the shown value)"
 
     v="$(_ask TARGET_USER "User that owns projects and agents" "$(id -un)")" || return 1
     config_set "$CONFIG_FILE" TARGET_USER "$v"
@@ -122,7 +122,7 @@ configure_wizard() {
     local current_agents name
     local -a agent_items=()
     current_agents="$(config_value AGENTS)"
-    declare -F agent_define >/dev/null || source "$DOTFILES_DIR/lib/agents.sh"
+    declare -F agent_define >/dev/null || source "$AGENT_READY_DIR/lib/agents.sh"
     for name in "${AGENT_NAMES[@]}"; do
         [[ $(agent_get "$name" managed) == stage:* ]] && continue # hermes: the HERMES feature below
         agent_items+=("$name|$(agent_get "$name" title)")
@@ -132,7 +132,7 @@ configure_wizard() {
     config_set "$CONFIG_FILE" AGENTS "$(tr '\n' ' ' <<<"$picked" | sed 's/ *$//')"
 
     if [[ $profile == desktop ]]; then
-        source "$DOTFILES_DIR/lib/desktop-apps.sh"
+        source "$AGENT_READY_DIR/lib/desktop-apps.sh"
         local desktop_current desktop_choice app_id
         local -a desktop_items=()
         desktop_current="$(config_value DESKTOP_APPS)"
@@ -215,13 +215,13 @@ configure_wizard() {
         step "the dashboard password is asked during the hermes stage (never stored in config.env)"
     fi
     # Written as root (install.sh run directly by root): hand it back to the repo owner.
-    if is_root; then chown -h "$(os_owner "$DOTFILES_DIR")" "$CONFIG_FILE"; fi
+    if is_root; then chown -h "$(os_owner "$AGENT_READY_DIR")" "$CONFIG_FILE"; fi
     ok "saved ${CONFIG_FILE/#$HOME/\~} — apply changes with ./install.sh --changed"
 }
 
 # config_looks_unset — true while config.env is missing or still has placeholders.
 config_looks_unset() {
-    local file="${DOTFILES_CONFIG:-$DOTFILES_DIR/config.env}"
+    local file="${AGENT_READY_CONFIG:-$AGENT_READY_DIR/config.env}"
     [[ ! -f $file ]] && return 0
     local CONFIG_FILE=$file profile
     profile="${PROFILE_OVERRIDE:-${PROFILE:-$(config_value PROFILE)}}"

@@ -10,7 +10,7 @@ nginx_ready() {
     }
 }
 nginx_start() {
-    local args=("$DOTFILES_DIR/bin/site" add)
+    local args=("$AGENT_READY_DIR/bin/site" add)
     [[ -n ${2:-} ]] && args+=("$2" --proxy "$1")
     "${args[@]}"
 }

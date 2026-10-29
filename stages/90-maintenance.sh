@@ -4,13 +4,13 @@
 # stage-profile: all
 # stage-desc: weekly `cleanup --auto` timer, final health check
 set -Eeuo pipefail
-source "$DOTFILES_DIR/lib/common.sh"
+source "$AGENT_READY_DIR/lib/common.sh"
 load_config
 
 if is_true "$CLEANUP_TIMER"; then
     log "cloud-cleanup.timer"
     for unit in cloud-cleanup.service cloud-cleanup.timer; do
-        render "$DOTFILES_DIR/systemd/$unit" USER="$TARGET_USER" HOME="$TARGET_HOME" |
+        render "$AGENT_READY_DIR/systemd/$unit" USER="$TARGET_USER" HOME="$TARGET_HOME" |
             as_root tee "/etc/systemd/system/$unit" >/dev/null
     done
     as_root systemctl daemon-reload
@@ -21,4 +21,4 @@ else
 fi
 
 log "Health check"
-run_as_user "$DOTFILES_DIR/bin/doctor" --brief || true
+run_as_user "$AGENT_READY_DIR/bin/doctor" --brief || true

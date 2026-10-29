@@ -1,5 +1,5 @@
-name: Feature / Module Request
-description: Propose a new agent module, tunnel provider, CLI improvement, or OS support enhancement
+name: AgentReady Feature / Module Request
+description: Improve AgentReady with an agent, desktop app, tunnel provider, or platform enhancement
 title: "[Feature]: "
 labels: ["enhancement"]
 body:

@@ -16,9 +16,9 @@
 # Failures are reported and skipped; nothing here deletes data.
 set -Eeuo pipefail
 source "$(dirname "$(readlink -f "$0")")/../lib/common.sh"
-source "$DOTFILES_DIR/lib/agents.sh"
-source "$DOTFILES_DIR/lib/pkg.sh"
-source "$DOTFILES_DIR/lib/ui.sh"
+source "$AGENT_READY_DIR/lib/agents.sh"
+source "$AGENT_READY_DIR/lib/pkg.sh"
+source "$AGENT_READY_DIR/lib/ui.sh"
 load_config
 
 GROUPS_ALL=(system tools agents shell php extras)
@@ -155,8 +155,8 @@ task() {
 }
 
 if want dotfiles; then
-    task "dotfiles (git pull)" git -C "$DOTFILES_DIR" pull --ff-only
-    task "dotfiles (re-link)" env DOTFILES_DIR="$DOTFILES_DIR" bash "$DOTFILES_DIR/stages/50-dotfiles.sh"
+    task "dotfiles (git pull)" git -C "$AGENT_READY_DIR" pull --ff-only
+    task "dotfiles (re-link)" env AGENT_READY_DIR="$AGENT_READY_DIR" bash "$AGENT_READY_DIR/stages/50-dotfiles.sh"
 fi
 
 # system_upgrade — refresh + full upgrade with this OS's package manager.

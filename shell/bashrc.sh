@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Managed by ~/.dotfiles (shell/bashrc.sh) — sourced from ~/.bashrc.
+# Managed by ~/.dotfiles (AgentReady; shell/bashrc.sh) — sourced from ~/.bashrc.
 # bash is not the login shell (fish is) but agents and scripts use it, so it
 # gets the same tools. Interactive extras only when interactive.
 

@@ -1,4 +1,4 @@
-# Hermes: dashboard and Telegram (server profile)
+# Hermes agent dashboard and Telegram setup on Linux servers
 
 [Hermes Agent](https://hermes-agent.nousresearch.com/docs/) (Nous Research)
 runs as an optional Telegram bot and web dashboard, served behind TLS at

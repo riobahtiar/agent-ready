@@ -1,4 +1,4 @@
-# Tools + tasks for working on this repo (laptop or VPS): `mise run check`.
+# Tools + tasks for working on AgentReady (laptop or VPS): `mise run check`.
 [tools]
 shellcheck = "0.11.0"
 shfmt = "3.14.1"

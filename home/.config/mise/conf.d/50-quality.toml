@@ -1,4 +1,4 @@
-# Managed by ~/.dotfiles (home/.config/mise/conf.d/50-quality.toml) — lint and security.
+# Managed by ~/.dotfiles (AgentReady; home/.config/mise/conf.d/50-quality.toml) — lint and security.
 [tools]
 shellcheck = "latest"
 shfmt = "latest"
