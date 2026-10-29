@@ -21,3 +21,4 @@
 - Bootstrap username/argument handling, cloud-user SSH-key fallback, private owner-side configuration writes, and cross-distribution password-status handling.
 - CLI help paths that could otherwise perform setup actions, desktop-specific menus, optional feature prompts, and operating-system portability issues.
 - Git-identity placeholders, symlinked shell startup-file preservation, Intel macOS Flutter SDK selection, sandbox resource defaults, and static-check compatibility with current Gitleaks.
+- Matched CI and local ShellCheck/shfmt versions through the pinned mise toolchain, avoiding formatter-version-only failures.

@@ -1,7 +1,7 @@
 # Tools + tasks for working on this repo (laptop or VPS): `mise run check`.
 [tools]
-shellcheck = "latest"
-shfmt = "latest"
+shellcheck = "0.11.0"
+shfmt = "3.14.1"
 
 [tasks.check]
 description = "bash -n, shellcheck, fish -n, stage headers, module contracts, templates, secrets"

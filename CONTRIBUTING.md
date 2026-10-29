@@ -34,6 +34,11 @@ mise run fmt          # formats shell scripts (shfmt -w -i 4)
 mise run check        # bash -n, sh -n, shellcheck, fish -n, stage headers, module contracts, JSON/nginx templates, gitleaks
 ```
 
+`mise.toml` pins ShellCheck and shfmt, and CI uses those same versions through
+the [official mise action](https://github.com/jdx/mise-action). Do not substitute
+an older distro formatter: formatting rules can differ across versions.
+Fish and Gitleaks checks run when those executables are available.
+
 ## Testing Provisioning Changes
 
 Changes to `stages/`, `bootstrap.sh`, `nginx/templates/`, or `bin/cleanup` should be smoke-tested in a disposable container before submitting:
